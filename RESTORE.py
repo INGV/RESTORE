@@ -338,7 +338,6 @@ def lilliefors(magcat, mmin):
 
     from statsmodels.stats.diagnostic import lilliefors as lillie
     from numpy import random
-    import numpy as np
 
     incert = ((random.randint(0, 10000, size=len(magcat))) - 5000) / 100000
     mag = magcat[:] + incert[:]
@@ -512,7 +511,7 @@ def mc_vs_time(magcat, mmin, mc_ok, serial_times, size, step):
             # --> STAI gap ends
             tmp_hole_upper_lim.append(t_window[i])
 
-            # Refine STAI gap start time by setting it to the time of the largest shock in the interval,
+    # Refine STAI gap start time by setting it to the time of the largest shock in the interval,
     # which has caused the raise of the magnitude of completeness
     for j in range(len(tmp_hole_lower_lim)):
         idx_critical = [idx for idx, val in enumerate(serial_times) if
@@ -522,7 +521,7 @@ def mc_vs_time(magcat, mmin, mc_ok, serial_times, size, step):
         idx_main = idx_critical[iidx_main[0]]
         tmp_hole_lower_lim[j] = serial_times[idx_main]
 
-        # Exclude too small regions, which could simply arise from statistical fluctuations  of the magnitude of completeness
+    # Exclude too small regions, which could simply arise from statistical fluctuations  of the magnitude of completeness
     a, b = [], []
     for j in range(len(tmp_hole_lower_lim)):
         index = [idx for idx, val in enumerate(serial_times) if
