@@ -21,11 +21,13 @@ The subsets of the catalog that are affected by the STAI issue are automatically
 Compare the replenished catalog with *ETAS_complete.txt*, to check how the missing events are reconstructed by RESTORE
 
 
-
 |----------------------------------------|
 
 How to cite this program in publications:
 
+https://zenodo.org/badge/DOI/10.5281/zenodo.3952183.svg
+
+Reference article:
 *Stallone, A.; Falcone, G. (2020) Missing earthquake data reconstruction in the space-time-magnitude domain.
 Submitted to JGR Solid Earth*
 
