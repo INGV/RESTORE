@@ -25,7 +25,7 @@ Compare the replenished catalog with *ETAS_complete.txt*, to check how the missi
 
 How to cite this program in publications:
 
-https://zenodo.org/badge/DOI/10.5281/zenodo.3952183.svg
+<a href="https://zenodo.org/badge/latestdoi/281066620"><img src="https://zenodo.org/badge/281066620.svg" alt="DOI"></a>
 
 Reference article:
 *Stallone, A.; Falcone, G. (2020) Missing earthquake data reconstruction in the space-time-magnitude domain.
