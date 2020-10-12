@@ -823,6 +823,10 @@ def replenished_catalog(catalog_sel, magcat, mmin, mc_ok, b, size, step, llcrnrl
     import numpy as np
     import csv
     import matplotlib.pyplot as plt
+    import os
+
+    path = "fig"
+    os.mkdir(path)
 
     serial_times = serial_time(catalog_sel)
 
