@@ -567,24 +567,25 @@ def map_plot(lon1, lat1, lon2, lat2, llcrnrlon, llcrnrlat, urcrnrlon, urcrnrlat)
     import matplotlib.pyplot as plt
     import numpy as np
 
-    m = Basemap(projection='merc', lat_0=5, lon_0=5,
-                resolution='i', area_thresh=0.1,
-                llcrnrlon=llcrnrlon, llcrnrlat=llcrnrlat,
+    m = Basemap(projection='merc', resolution='i', llcrnrlon=llcrnrlon, llcrnrlat=llcrnrlat,
                 urcrnrlon=urcrnrlon, urcrnrlat=urcrnrlat)
 
-    m.drawcoastlines()
+    try:
+        m.drawcoastlines(linewidth=0.5)
+    except:
+        pass
     m.drawcountries()
     m.drawmapboundary()
-    parallels = np.arange(35, 48, 2)
-    m.drawparallels(parallels, labels=[True, False, False, True], fontsize=10)
-    meridians = np.arange(5, 21, 2)
-    m.drawmeridians(meridians, labels=[True, False, False, True], fontsize=10)
+    parallels = np.arange(-90, 90, 0.5)
+    meridians = np.arange(-180, 180, 0.5)
+    m.drawparallels(parallels, labels=[1, 0, 0, 0], fontsize=10, dashes=[1, 5])
+    m.drawmeridians(meridians, labels=[0, 0, 1, 0], fontsize=10, dashes=[1, 5])
 
     x1, y1 = m(lon1, lat1)
     x2, y2 = m(lon2, lat2)
 
-    plt.plot(x1, y1, 'ko', markersize=0.5, label="filled")
-    plt.plot(x2, y2, 'ro', markersize=0.5, label="original")
+    plt.plot(x1, y1, 'o', markersize=5, markerfacecolor='0.3', markeredgecolor='w')
+    plt.plot(x2, y2, 'o', markersize=5, markerfacecolor='r', markeredgecolor='w')
     plt.xlabel('Longitude', fontsize=12, labelpad=15)
     plt.ylabel('Latitude', fontsize=12, labelpad=30)
 
