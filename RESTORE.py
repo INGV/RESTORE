@@ -335,40 +335,27 @@ def serial_time(input_):
 
 def lilliefors(magcat, mmin):
     # Estimates magnitude of completeness with Lilliefors test (Clauset et al., 2009)
-
     from statsmodels.stats.diagnostic import lilliefors as lillie
     from numpy import random
 
-    incert = ((random.randint(0, 10000, size=len(magcat))) - 5000) / 100000
-    mag = magcat[:] + incert[:]
     bin_m = 0.1
+    incert = random.uniform(0, 1, size=len(magcat)) / 10 - bin_m / 2
+    mag = magcat[:] + incert[:]
     upperlim = max(magcat)
 
-    m, pval, h = [], [], []
-    count = 0
     for i in range(int(mmin * 10), int(upperlim * 10), 1):
         lowlim = float(i / 10) - bin_m / 2
-        magsel = ([mgev for mgev in mag if mgev >= lowlim])
+        magsel = ([mgev for mgev in mag if mgev > lowlim])
         magselmin = [x - lowlim for x in magsel]
         kstest, pvalue_lilli = lillie(magselmin, dist='exp')
-        if pvalue_lilli >= 0.05:
-            h.append(1)
-        else:
-            h.append(0)
-        m.append(float(i / 10))
-        pval.append(pvalue_lilli)
-        count += 1
-
-        if i == int(mmin * 10):
+        if pvalue_lilli < 0.05:
             continue
         else:
-            if h[count - 2] == 1:
-                break
-            else:
-                continue
-    mc = m[count - 2]
-    pvalue = pval[count - 2]
-    return mc, pvalue
+            break
+    mc = float(i / 10)
+    pval = pvalue_lilli
+
+    return mc, pval
 
 
 def b_value_zmap(magcat):
@@ -584,10 +571,10 @@ def map_plot(lon1, lat1, lon2, lat2, llcrnrlon, llcrnrlat, urcrnrlon, urcrnrlat)
     x1, y1 = m(lon1, lat1)
     x2, y2 = m(lon2, lat2)
 
-    plt.plot(x1, y1, 'o', markersize=5, markerfacecolor='0.3', markeredgecolor='w')
-    plt.plot(x2, y2, 'o', markersize=5, markerfacecolor='r', markeredgecolor='w')
+    plt.plot(x1, y1, 'o', color='0.3', markersize=5, markeredgecolor='w')
+    plt.plot(x2, y2, 'o', color='steelblue', markersize=5, markeredgecolor='w')
     plt.xlabel('Longitude', fontsize=12, labelpad=15)
-    plt.ylabel('Latitude', fontsize=12, labelpad=30)
+    plt.ylabel('Latitude', fontsize=12, labelpad=40)
 
 
 def spatial_smoothing(mc_ok, subcatalog, xmin, xmax, ymin, ymax):
@@ -772,16 +759,27 @@ def ghost_element(catalog_sel, mmin, mc_ok, magcat, b, size, step, llcrnrlon, ll
     idx_magcatok = [idx for idx, val in enumerate(magcat) if val >= mc_ok]
     magcat_ok = [magcat[i] for i in idx_magcatok]
     serial_times_ok = [serial_times[i] for i in idx_magcatok]
+
+    iidx_main = [j for j, v in enumerate(magcat_ok) if v == max(magcat_ok)]
+    time_big_shock = serial_times_ok[iidx_main[0]]
+    idx_for_plot = [idx for idx, val in enumerate(serial_times_ok) if
+                    (time_big_shock - 1) <= val <= (time_big_shock + 3)]
+    serial_times_for_plot = [serial_times_ok[i] for i in idx_for_plot]
+    magcat_for_plot = [magcat_ok[i] for i in idx_for_plot]
+    idx_for_plot_ghost = [idx for idx, val in enumerate(t_ghost) if
+                    (time_big_shock - 1) <= val <= (time_big_shock + 3)]
+    t_ghost_for_plot = [t_ghost[i] for i in idx_for_plot_ghost]
+    m_ghost_for_plot = [m_ghost[i] for i in idx_for_plot_ghost]
     ax[0].xaxis_date()
     ax[0].xaxis.set_major_formatter(formatter)
-    ax[0].scatter(serial_times_ok, magcat_ok, color='C1', s=1, label='Original data')
-    ax[0].scatter(t_ghost, m_ghost, color='C4', s=1, label='Replenished data')
+    ax[0].plot(serial_times_for_plot, magcat_for_plot, 'o', markersize=3, markerfacecolor='0.3', markeredgecolor='None', label='Original data')
+    ax[0].plot(t_ghost_for_plot, m_ghost_for_plot, 'o', markersize=3, markerfacecolor='steelblue', markeredgecolor='None', label='Replenished data')
     ax[0].set_xlabel("Time")
     ax[0].set_ylabel("Magnitude")
     ax[0].legend(loc='upper left')
     ax[1].xaxis_date()
     ax[1].xaxis.set_major_formatter(formatter)
-    ax[1].scatter(serial_times_ok, magcat_ok, color='C1', s=1, label='Original data')
+    ax[1].plot(serial_times_for_plot, magcat_for_plot, 'o', markersize=3, markerfacecolor='0.3', markeredgecolor='None', label='Original data')
     ax[1].set_xlabel("Time")
     ax[1].set_ylabel("Magnitude")
     ax[1].legend(loc='upper left')
@@ -875,14 +873,14 @@ def replenished_catalog(catalog_sel, magcat, mmin, mc_ok, b, size, step, llcrnrl
     ax.set_xlabel("Sequential number")
     ax.set_ylabel("Magnitude")
     ax.set_title('Original catalog')
-    plt.scatter(x1, magcat_compl, 1)
+    plt.plot(x1, magcat_compl, 'o', markersize=3, markerfacecolor='0.3', markeredgecolor='None')
     plt.savefig('fig/Magnitude_SeqNumbers_Original.pdf', format='pdf')
 
     fig, ax = plt.subplots()
     ax.set_xlabel("Sequential number")
     ax.set_ylabel("Magnitude")
     ax.set_title('Replenished catalog')
-    plt.scatter(x2, sorted_new_mag, 1)
+    plt.plot(x2, sorted_new_mag, 'o', markersize=3, markerfacecolor='0.3', markeredgecolor='None')
     plt.savefig('fig/Magnitude_SeqNumbers_Replenished.pdf', format='pdf')
 
     depth = np.zeros(len(new_times))
@@ -922,8 +920,4 @@ def replenished_catalog(catalog_sel, magcat, mmin, mc_ok, b, size, step, llcrnrl
         for x in rows:
             writer.writerow(x)
     return replenished_catalog
-
-
-
-
 
