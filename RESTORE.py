@@ -550,7 +550,6 @@ def map_plot(lon1, lat1, lon2, lat2, llcrnrlon, llcrnrlat, urcrnrlon, urcrnrlat)
 
     m = Basemap(projection='merc', resolution='i', llcrnrlon=llcrnrlon, llcrnrlat=llcrnrlat,
                 urcrnrlon=urcrnrlon, urcrnrlat=urcrnrlat)
-    m.readshapefile('./faults', '.shp', linewidth=0.25, color='r', default_encoding='ISO8859-1')
 
     try:
         m.drawcoastlines(linewidth=0.5)
