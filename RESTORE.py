@@ -2,36 +2,27 @@
 This function simulates time, location and magnitude of those earthquakes
 that have not been detected by the seismic network due to the decrease of signal-to-noise ratio
 after the occurrence of a (relatively) large earthquake (STAI issue).
-
 The algorithm assesses the temporal variability of the magnitude of completeness "mc"
 by means of a sliding overlapping windows approach, which collects estimates of
 "mc" at the end of each window. Since the window has a fixed number of events k and its
 shift dk is constant, estimates of mc are elapsed by dk events.
-
 A statistic-based approach is implemented to pinpoint those time intervals where a threshold value for the
 magnitude of completeness is significantly exceeded ("STAI gaps").
-
 The number of missing events within each dk-step is estimated by calculating the difference between the
 observed counts and the counts predicted by the Gutenberg-Richter relationship. Magnitude,
 occurrence time and location of the simulated events are reconstructed implementing Monte
 Carlo sampling techniques.
-
 |---------------------------|
  Latest revision: July, 2020
 |---------------------------|
-
-
 |--------------------------------------------|
  AUTHORS:
  Angela Stallone  (angela.stallone@ingv.it)
  Giuseppe Falcone (giuseppe.falcone@ingv.it)
 |--------------------------------------------|
-
-
 COPYRIGHT:
 Stallone, A.; Falcone, G. (2020) "Missing earthquake data reconstruction in the space-time-magnitude domain."
 Submitted to JGR Solid Earth
-
 """
 
 # Column numbers in the saved catalog
@@ -339,14 +330,13 @@ def lilliefors(magcat, mmin):
     from numpy import random
 
     bin_m = 0.1
-    incert = random.uniform(0, 1, size=len(magcat)) / 10 - bin_m / 2
+    incert = ((random.randint(0, 10000, size=len(magcat)))-5000)/100000
     mag = magcat[:] + incert[:]
-    upperlim = max(magcat)
+    upperlim = 35
 
     for i in range(int(mmin * 10), int(upperlim * 10), 1):
-        lowlim = float(i / 10) - bin_m / 2
-        magsel = ([mgev for mgev in mag if mgev > lowlim])
-        magselmin = [x - lowlim for x in magsel]
+        magsel = ([mgev for mgev in mag if mgev >= i / 10])
+        magselmin = [x - float(i / 10) for x in magsel]
         kstest, pvalue_lilli = lillie(magselmin, dist='exp')
         if pvalue_lilli < 0.05:
             continue
@@ -449,7 +439,7 @@ def bootstrap_mc(mag_data, mmin):
 
     import numpy as np
 
-    iterations = 100
+    iterations = 200
     mc_bootstrap = []
     for _ in range(iterations):
         boot = np.random.choice(mag_data, size=len(mag_data), replace=True)
@@ -488,27 +478,31 @@ def mc_vs_time(magcat, mmin, mc_ok, serial_times, size, step):
     # Temporal bounds of the STAI gaps (where mc > mc_ok + sigma)
     tmp_hole_lower_lim = []
     tmp_hole_upper_lim = []
-    for i in range(1, len(t_window) - 1):
-        if (i == 1 and mc_time[i] > upper_lim) or (mc_time[i] > upper_lim and mc_time[i - 1] <= upper_lim):
-            # if these conditions are met, mc is exiting the upper limit (mc > mc_ok + sigma)
-            # --> STAI gap starts
-            tmp_hole_lower_lim.append(t_window[i])
-        if mc_time[i] > upper_lim and mc_time[i + 1] <= upper_lim:
-            # if these conditions are met, mc is re-entering in the range mc_ok + sigma
-            # --> STAI gap ends
+    for i in range(len(t_window) - 1):
+
+        # If these conditions are met, mc is exceeding the upper limit (mc >= mc_ok + sigma)
+        # --> STAI gap starts
+        if i == 0:
+            if mc_time[i] >= upper_lim:
+                # Set the STAI gap starting time to the time of the first event
+                tmp_hole_lower_lim.append(serial_times[0])
+
+        else:
+            if (mc_time[i] >= upper_lim and mc_time[i - 1] < upper_lim):
+                # Set the STAI gap starting time to the time of the largest shock in the step,
+                # which has caused the raise of the magnitude of completeness
+                idx_critical = [idx for idx, val in enumerate(serial_times) if t_window[i-1] <= val <= t_window[i]]
+                val = magcat[idx_critical]
+                iidx_main = [j for j, v in enumerate(val) if v == max(val)]
+                idx_main = idx_critical[iidx_main[0]]
+                tmp_hole_lower_lim.append(serial_times[idx_main])
+
+        # If these conditions are met, mc is lower than the upper limit
+        # --> STAI gap ends
+        if mc_time[i] >= upper_lim and mc_time[i + 1] < upper_lim:
             tmp_hole_upper_lim.append(t_window[i])
 
-    # Refine STAI gap start time by setting it to the time of the largest shock in the interval,
-    # which has caused the raise of the magnitude of completeness
-    for j in range(len(tmp_hole_lower_lim)):
-        idx_critical = [idx for idx, val in enumerate(serial_times) if
-                        (tmp_hole_lower_lim[j] - step) <= val <= tmp_hole_lower_lim[j]]
-        val = magcat[idx_critical]
-        iidx_main = [j for j, v in enumerate(val) if v == max(val)]
-        idx_main = idx_critical[iidx_main[0]]
-        tmp_hole_lower_lim[j] = serial_times[idx_main]
-
-    # Exclude too small regions, which could simply arise from statistical fluctuations  of the magnitude of completeness
+    # Exclude too small gaps, which could simply arise from statistical fluctuations  of the magnitude of completeness
     a, b = [], []
     for j in range(len(tmp_hole_lower_lim)):
         index = [idx for idx, val in enumerate(serial_times) if
@@ -537,7 +531,7 @@ def mc_vs_time(magcat, mmin, mc_ok, serial_times, size, step):
     ax.xaxis.set_major_formatter(fmt)
     ax.plot(t_window, mc_time, label='Mc vs Time', ls='-')
     ax.fill_between(t_window, upper_lim, mc_time,
-                    where=upper_lim < mc_time, color='C1', alpha=0.7, label='Mc > sigma')
+                    where=upper_lim <= mc_time, color='C1', alpha=0.7, label='Mc >= mc_ok + sigma')
     x_holes = hole_lower_lim + hole_upper_lim
     for p in x_holes:
         plt.axvline(x=p, ls='--', linewidth=1, color='C2')
@@ -556,6 +550,7 @@ def map_plot(lon1, lat1, lon2, lat2, llcrnrlon, llcrnrlat, urcrnrlon, urcrnrlat)
 
     m = Basemap(projection='merc', resolution='i', llcrnrlon=llcrnrlon, llcrnrlat=llcrnrlat,
                 urcrnrlon=urcrnrlon, urcrnrlat=urcrnrlat)
+    m.readshapefile('./faults', '.shp', linewidth=0.25, color='r', default_encoding='ISO8859-1')
 
     try:
         m.drawcoastlines(linewidth=0.5)
@@ -760,26 +755,16 @@ def ghost_element(catalog_sel, mmin, mc_ok, magcat, b, size, step, llcrnrlon, ll
     magcat_ok = [magcat[i] for i in idx_magcatok]
     serial_times_ok = [serial_times[i] for i in idx_magcatok]
 
-    iidx_main = [j for j, v in enumerate(magcat_ok) if v == max(magcat_ok)]
-    time_big_shock = serial_times_ok[iidx_main[0]]
-    idx_for_plot = [idx for idx, val in enumerate(serial_times_ok) if
-                    (time_big_shock - 1) <= val <= (time_big_shock + 3)]
-    serial_times_for_plot = [serial_times_ok[i] for i in idx_for_plot]
-    magcat_for_plot = [magcat_ok[i] for i in idx_for_plot]
-    idx_for_plot_ghost = [idx for idx, val in enumerate(t_ghost) if
-                    (time_big_shock - 1) <= val <= (time_big_shock + 3)]
-    t_ghost_for_plot = [t_ghost[i] for i in idx_for_plot_ghost]
-    m_ghost_for_plot = [m_ghost[i] for i in idx_for_plot_ghost]
     ax[0].xaxis_date()
     ax[0].xaxis.set_major_formatter(formatter)
-    ax[0].plot(serial_times_for_plot, magcat_for_plot, 'o', markersize=3, markerfacecolor='0.3', markeredgecolor='None', label='Original data')
-    ax[0].plot(t_ghost_for_plot, m_ghost_for_plot, 'o', markersize=3, markerfacecolor='steelblue', markeredgecolor='None', label='Replenished data')
+    ax[0].plot(serial_times_ok, magcat_ok, 'o', markersize=3, markerfacecolor='0.3', markeredgecolor='None', label='Original data')
+    ax[0].plot(t_ghost, m_ghost, 'o', markersize=3, markerfacecolor='steelblue', markeredgecolor='None', label='Replenished data')
     ax[0].set_xlabel("Time")
     ax[0].set_ylabel("Magnitude")
     ax[0].legend(loc='upper left')
     ax[1].xaxis_date()
     ax[1].xaxis.set_major_formatter(formatter)
-    ax[1].plot(serial_times_for_plot, magcat_for_plot, 'o', markersize=3, markerfacecolor='0.3', markeredgecolor='None', label='Original data')
+    ax[1].plot(serial_times_ok, magcat_ok, 'o', markersize=3, markerfacecolor='0.3', markeredgecolor='None', label='Original data')
     ax[1].set_xlabel("Time")
     ax[1].set_ylabel("Magnitude")
     ax[1].legend(loc='upper left')
@@ -920,4 +905,3 @@ def replenished_catalog(catalog_sel, magcat, mmin, mc_ok, b, size, step, llcrnrl
         for x in rows:
             writer.writerow(x)
     return replenished_catalog
-
