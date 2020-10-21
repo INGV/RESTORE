@@ -439,7 +439,7 @@ def bootstrap_mc(mag_data, mmin):
 
     import numpy as np
 
-    iterations = 200
+    iterations = 100
     mc_bootstrap = []
     for _ in range(iterations):
         boot = np.random.choice(mag_data, size=len(mag_data), replace=True)
