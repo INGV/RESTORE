@@ -149,11 +149,6 @@ def read_catalog_zmap(name_catalog):
     catalog[:, HourColumn] = hour[:]
     catalog[:, MinuteColumn] = minute[:]
     catalog[:, SecondColumn] = sec[:]
-    rows = zip(lon, lat, year, month, day, mag, depth, hour, minute, sec)
-    with open('Zmap_catalog', 'w') as f:
-        writer = csv.writer(f, delimiter=' ', skipinitialspace=False, quoting=csv.QUOTE_NONE, lineterminator='\n')
-        for x in rows:
-            writer.writerow(x)
     return catalog
 
 
@@ -289,6 +284,7 @@ def acquisition_xml(depth_m, mmin, xmin, xmax, ymin, ymax, time_start, time_end)
 def serial_time(input_):
     # Converts the input date (string format) or date vectors
     # (year, month, day, hour, minute, second) into timestamps
+    # Origin time: Year 0, Month 0, Day 0 (same as Matlab)
 
     import datetime
     import numpy as np
@@ -324,6 +320,23 @@ def serial_time(input_):
         return out2
 
 
+def timestamp_to_datetime(timestamp):
+    # Converts custom timestamps to datetime objects
+
+    import datetime
+
+    days = timestamp % 1
+    hours = days % 1 * 24
+    minutes = hours % 1 * 60
+    seconds = minutes % 1 * 60
+
+    date_out = datetime.datetime.fromordinal(int(timestamp)) + datetime.timedelta(days=int(days)) + \
+               datetime.timedelta(hours=int(hours)) + datetime.timedelta(minutes=int(minutes)) + \
+               datetime.timedelta(seconds=seconds) - datetime.timedelta(days=366)
+
+    return date_out
+
+
 def lilliefors(magcat, mmin):
     # Estimates magnitude of completeness with Lilliefors test (Clauset et al., 2009)
     from statsmodels.stats.diagnostic import lilliefors as lillie
@@ -332,9 +345,9 @@ def lilliefors(magcat, mmin):
     bin_m = 0.1
     incert = ((random.randint(0, 10000, size=len(magcat)))-5000)/100000
     mag = magcat[:] + incert[:]
-    upperlim = 35
+    upperlim = 40
 
-    for i in range(int(mmin * 10), int(upperlim * 10), 1):
+    for i in range(int(mmin * 10), upperlim, 1):
         magsel = ([mgev for mgev in mag if mgev >= i / 10])
         magselmin = [x - float(i / 10) for x in magsel]
         kstest, pvalue_lilli = lillie(magselmin, dist='exp')
@@ -475,7 +488,7 @@ def mc_vs_time(magcat, mmin, mc_ok, serial_times, size, step):
         mc_time.append(mc_new)
         t_window.append(serial_times[j + size])
 
-    # Temporal bounds of the STAI gaps (where mc > mc_ok + sigma)
+        # Temporal bounds of the STAI gaps (where mc > mc_ok + sigma)
     tmp_hole_lower_lim = []
     tmp_hole_upper_lim = []
     for i in range(len(t_window) - 1):
@@ -491,7 +504,7 @@ def mc_vs_time(magcat, mmin, mc_ok, serial_times, size, step):
             if (mc_time[i] >= upper_lim and mc_time[i - 1] < upper_lim):
                 # Set the STAI gap starting time to the time of the largest shock in the step,
                 # which has caused the raise of the magnitude of completeness
-                idx_critical = [idx for idx, val in enumerate(serial_times) if t_window[i-1] <= val <= t_window[i]]
+                idx_critical = [idx for idx, val in enumerate(serial_times) if t_window[i - 2] <= val <= t_window[i]]
                 val = magcat[idx_critical]
                 iidx_main = [j for j, v in enumerate(val) if v == max(val)]
                 idx_main = idx_critical[iidx_main[0]]
@@ -523,17 +536,21 @@ def mc_vs_time(magcat, mmin, mc_ok, serial_times, size, step):
         mc_hole.append(tmp_mc_hole)
 
     # plot mc vs time
+    dates1 = [timestamp_to_datetime(t_window[i]) for i in range(len(t_window))]
+    datenums1 = mdates.date2num(dates1)
+
+    x_holes = hole_lower_lim + hole_upper_lim
+    dates2 = [timestamp_to_datetime(x_holes[i]) for i in range(len(x_holes))]
+    datenums2 = mdates.date2num(dates2)
+
     fig, ax = plt.subplots()
     ax.xaxis_date()
-    locator = mdates.MonthLocator()  # every month
-    fmt = mdates.DateFormatter('%b')
-    ax.xaxis.set_major_locator(locator)
+    fmt = mdates.DateFormatter('%m/%Y')
     ax.xaxis.set_major_formatter(fmt)
-    ax.plot(t_window, mc_time, label='Mc vs Time', ls='-')
-    ax.fill_between(t_window, upper_lim, mc_time,
+    ax.plot(datenums1, mc_time, label='Mc vs Time', ls='-')
+    ax.fill_between(datenums1, upper_lim, mc_time,
                     where=upper_lim <= mc_time, color='C1', alpha=0.7, label='Mc >= mc_ok + sigma')
-    x_holes = hole_lower_lim + hole_upper_lim
-    for p in x_holes:
+    for p in datenums2:
         plt.axvline(x=p, ls='--', linewidth=1, color='C2')
     ax.set_xlabel("Time")
     ax.set_ylabel("Mc")
@@ -550,7 +567,7 @@ def map_plot(lon1, lat1, lon2, lat2, llcrnrlon, llcrnrlat, urcrnrlon, urcrnrlat)
 
     m = Basemap(projection='merc', resolution='i', llcrnrlon=llcrnrlon, llcrnrlat=llcrnrlat,
                 urcrnrlon=urcrnrlon, urcrnrlat=urcrnrlat)
-
+    
     try:
         m.drawcoastlines(linewidth=0.5)
     except:
@@ -565,10 +582,12 @@ def map_plot(lon1, lat1, lon2, lat2, llcrnrlon, llcrnrlat, urcrnrlon, urcrnrlat)
     x1, y1 = m(lon1, lat1)
     x2, y2 = m(lon2, lat2)
 
-    plt.plot(x1, y1, 'o', color='0.3', markersize=5, markeredgecolor='w')
-    plt.plot(x2, y2, 'o', color='steelblue', markersize=5, markeredgecolor='w')
+    plt.plot(x1, y1, 'o', color='0.3', alpha=.7, markersize=5, markeredgecolor='w')
+    plt.plot(x2, y2, 'o', color='steelblue', alpha=.7, markersize=5, markeredgecolor='w')
     plt.xlabel('Longitude', fontsize=12, labelpad=15)
     plt.ylabel('Latitude', fontsize=12, labelpad=40)
+
+    return m
 
 
 def spatial_smoothing(mc_ok, subcatalog, xmin, xmax, ymin, ymax):
@@ -630,6 +649,7 @@ def ghost_element(catalog_sel, mmin, mc_ok, magcat, b, size, step, llcrnrlon, ll
     import matplotlib.dates as mdates
     import math
     import numpy as np
+    from datetime import datetime as dt
 
     serial_times = serial_time(catalog_sel)
 
@@ -746,24 +766,30 @@ def ghost_element(catalog_sel, mmin, mc_ok, magcat, b, size, step, llcrnrlon, ll
             lon_ghost.append(round(rand_lon, 2))
             lat_ghost.append(round(rand_lat, 2))
 
-    # plots
-    # Plot original (m >= mc) + simulated eqs
-    fig, ax = plt.subplots(2)
-    formatter = mdates.DateFormatter("%m-%d")
     idx_magcatok = [idx for idx, val in enumerate(magcat) if val >= mc_ok]
     magcat_ok = [magcat[i] for i in idx_magcatok]
     serial_times_ok = [serial_times[i] for i in idx_magcatok]
 
+    # plots
+    # Plot original (m >= mc) + simulated eqs
+
+    dates1 = [timestamp_to_datetime(serial_times_ok[i]) for i in range(len(serial_times_ok))]
+    dates2 = [timestamp_to_datetime(t_ghost[i]) for i in range(len(t_ghost))]
+    datenums1 = mdates.date2num(dates1)
+    datenums2 = mdates.date2num(dates2)
+
+    fig, ax = plt.subplots(2)
+    fmt = mdates.DateFormatter('%m/%Y')
+    ax[0].plot(datenums1, magcat_ok, 'o', markersize=3, markerfacecolor='0.3', markeredgecolor='None', label='Original data')
+    ax[0].plot(datenums2, m_ghost, 'o', markersize=3, markerfacecolor='steelblue', markeredgecolor='None', label='Replenished data')
     ax[0].xaxis_date()
-    ax[0].xaxis.set_major_formatter(formatter)
-    ax[0].plot(serial_times_ok, magcat_ok, 'o', markersize=3, markerfacecolor='0.3', markeredgecolor='None', label='Original data')
-    ax[0].plot(t_ghost, m_ghost, 'o', markersize=3, markerfacecolor='steelblue', markeredgecolor='None', label='Replenished data')
+    ax[0].xaxis.set_major_formatter(fmt)
     ax[0].set_xlabel("Time")
     ax[0].set_ylabel("Magnitude")
     ax[0].legend(loc='upper left')
+    ax[1].plot(datenums1, magcat_ok, 'o', markersize=3, markerfacecolor='0.3', markeredgecolor='None', label='Original data')
     ax[1].xaxis_date()
-    ax[1].xaxis.set_major_formatter(formatter)
-    ax[1].plot(serial_times_ok, magcat_ok, 'o', markersize=3, markerfacecolor='0.3', markeredgecolor='None', label='Original data')
+    ax[1].xaxis.set_major_formatter(fmt)
     ax[1].set_xlabel("Time")
     ax[1].set_ylabel("Magnitude")
     ax[1].legend(loc='upper left')
@@ -779,25 +805,10 @@ def ghost_element(catalog_sel, mmin, mc_ok, magcat, b, size, step, llcrnrlon, ll
     lon_compl = [lon[i] for i in idx_magcatok]
 
     fig, ax = plt.subplots()
-    map_plot(lon_compl, lat_compl, lon_ghost, lat_ghost, llcrnrlon, llcrnrlat, urcrnrlon, urcrnrlat)
+    m = map_plot(lon_compl, lat_compl, lon_ghost, lat_ghost, llcrnrlon, llcrnrlat, urcrnrlon, urcrnrlat)
     plt.savefig('fig/Spatial_map.pdf', format='pdf')
 
     return m_ghost, t_ghost, lon_ghost, lat_ghost
-
-
-def timestamp_to_datetime(timestamp):
-    import datetime
-
-    days = timestamp % 1
-    hours = days % 1 * 24
-    minutes = hours % 1 * 60
-    seconds = minutes % 1 * 60
-
-    date_out = datetime.datetime.fromordinal(int(timestamp)) + datetime.timedelta(days=int(days)) + \
-               datetime.timedelta(hours=int(hours)) + datetime.timedelta(minutes=int(minutes)) + \
-               datetime.timedelta(seconds=seconds) - datetime.timedelta(days=366)
-
-    return date_out
 
 
 def replenished_catalog(catalog_sel, magcat, mmin, mc_ok, b, size, step, llcrnrlon, llcrnrlat, urcrnrlon, urcrnrlat):
