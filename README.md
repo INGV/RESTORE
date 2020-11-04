@@ -27,8 +27,3 @@ How to cite this program in publications:
 
 <a href="https://zenodo.org/badge/latestdoi/281066620"><img src="https://zenodo.org/badge/281066620.svg" alt="DOI"></a>
 
-Reference article:
-
-*Stallone, A.; Falcone, G. (2020) Missing earthquake data reconstruction in the space-time-magnitude domain.
-Submitted to JGR Solid Earth*
-
