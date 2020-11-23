@@ -42,6 +42,8 @@ Compare the replenished catalog with *ETAS_complete.txt*, to check how the missi
 
 <h2>Requirements</h2>
 
+Python >= 3
+
 statsmodels >= 0.12.1
 
 matplotlib < 3.0.0
