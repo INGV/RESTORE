@@ -1,28 +1,43 @@
 """
-This function simulates time, location and magnitude of those earthquakes
-that have not been detected by the seismic network due to the decrease of signal-to-noise ratio
-after the occurrence of a (relatively) large earthquake (STAI issue).
-The algorithm assesses the temporal variability of the magnitude of completeness "mc"
+|--------------------------------------------------------------------------|
+
+RESTORE: REal catalogs STOchastic REplenishment
+Written by Angela Stallone with help from Giuseppe Falcone
+
+For any comment, question or suggestion write to:
+angela.stallone@ingv.it
+
+This project has been founded by the Seismic Hazard Center
+(Centro di Pericolosità Sismica, CPS, at the Istituto Nazionale di Geosica e Vulcanologia, INGV)
+
+|---------------------------|
+Latest revision: November, 2020
+|---------------------------|
+
+To cite:
+
+Stallone A., Falcone G. 2020. Missing earthquake data reconstruction in the space-time-magnitude domain.
+Preprint on https://essoar.org (2020) DOI: 10.1002/essoar.10504916.1
+
+|--------------------------------------------------------------------------|
+
+
+ABOUT
+
+RESTORE simulates time, location and magnitude of those earthquakes
+that have not been detected by the seismic network due to the overlap of earthquake signals in seismic records
+after the occurrence of a large earthquake (short term aftershock incompleteness - STAI).
+The algorithm assesses the temporal variability of the magnitude of completeness Mc
 by means of a sliding overlapping windows approach, which collects estimates of
-"mc" at the end of each window. Since the window has a fixed number of events k and its
-shift dk is constant, estimates of mc are elapsed by dk events.
+Mc at the end of each window. Since the window has a fixed number of events k and its
+shift dk is constant, estimates of Mc are elapsed by dk events.
 A statistic-based approach is implemented to pinpoint those time intervals where a threshold value for the
 magnitude of completeness is significantly exceeded ("STAI gaps").
 The number of missing events within each dk-step is estimated by calculating the difference between the
 observed counts and the counts predicted by the Gutenberg-Richter relationship. Magnitude,
 occurrence time and location of the simulated events are reconstructed implementing Monte
 Carlo sampling techniques.
-|---------------------------|
- Latest revision: July, 2020
-|---------------------------|
-|--------------------------------------------|
- AUTHORS:
- Angela Stallone  (angela.stallone@ingv.it)
- Giuseppe Falcone (giuseppe.falcone@ingv.it)
-|--------------------------------------------|
-COPYRIGHT:
-Stallone, A.; Falcone, G. (2020) "Missing earthquake data reconstruction in the space-time-magnitude domain."
-Submitted to JGR Solid Earth
+
 """
 
 # Column numbers in the saved catalog
@@ -39,78 +54,7 @@ MinuteColumn = 8
 SecondColumn = 9
 
 
-def read_catalog_cnt(name_catalog, depthm, magm, xmin, xmax, ymin, ymax):
-    import csv
-    import math
-    import numpy as np
-    from numpy import flipud
-    import dateparser
-    lon = []
-    lat = []
-    year = []
-    month = []
-    day = []
-    mag = []
-    depth = []
-    hour = []
-    minute = []
-    sec = []
-    type_mag = []
-    with open(name_catalog) as csvfile:
-        read_csv = csv.reader(csvfile, skipinitialspace=True, delimiter='|')
-        next(read_csv)
-        i = 0
-        for row in read_csv:
-            if float(row[4]) <= depthm and xmin <= float(row[3]) <= xmax and ymin <= float(row[2]) <= ymax:
-                if row[9] == 'Md':
-                    magnitude = 1.612 * float(row[10]) - 1.633
-                if row[9] == 'Mw':
-                    magnitude = 0.938 * float(row[10]) + 0.154
-                if row[9] == 'ML':
-                    magnitude = float(row[10])
-                if magnitude >= magm:
-                    i = i + 1
-                    time = dateparser.parse((row[1]))
-                    lon.append(float(row[3]))
-                    lat.append(float(row[2]))
-                    year.append(int(time.year))
-                    month.append(int(time.month))
-                    day.append(int(time.day))
-                    mag.append(round(magnitude, 1))
-                    depth.append(float(row[4]))
-                    hour.append(int(time.hour))
-                    minute.append(int(time.minute))
-                    second = float(time.second) + (float(time.microsecond) / 1000000)
-                    sec.append(round(second, 2))
-                    type_mag.append((row[9]))
-            sec = [0 if math.isnan(x) else x for x in sec]
-            minute = [0 if math.isnan(x) else x for x in minute]
-            hour = [0 if math.isnan(x) else x for x in hour]
-            day = [1 if math.isnan(x) else x for x in day]
-            month = [1 if math.isnan(x) else x for x in month]
-    nrows2 = len(lon)
-    ncols = 11
-    catalog = np.ndarray((nrows2, ncols), dtype=object)
-    catalog[:, LonColumn] = flipud(lon[:])
-    catalog[:, LatColumn] = flipud(lat[:])
-    catalog[:, YearColumn] = flipud(year[:])
-    catalog[:, MonthColumn] = flipud(month[:])
-    catalog[:, DayColumn] = flipud(day[:])
-    catalog[:, MagnColumn] = flipud(mag[:])
-    catalog[:, DepthColumn] = flipud(depth[:])
-    catalog[:, HourColumn] = flipud(hour[:])
-    catalog[:, MinuteColumn] = flipud(minute[:])
-    catalog[:, SecondColumn] = flipud(sec[:])
-    rows = zip(flipud(lon), flipud(lat), flipud(year), flipud(month), flipud(day), flipud(mag), flipud(depth),
-               flipud(hour), flipud(minute), flipud(sec))
-    with open('Zmap_catalog', 'w') as f:
-        writer = csv.writer(f, delimiter=' ', skipinitialspace=True, quoting=csv.QUOTE_NONE, lineterminator='\n')
-        for x in rows:
-            writer.writerow(x)
-    return catalog
-
-
-def read_catalog_zmap(name_catalog):
+def read_catalog_zmap(name_catalog, delimiter):
     import csv
     import numpy as np
     lon = []
@@ -124,17 +68,17 @@ def read_catalog_zmap(name_catalog):
     minute = []
     sec = []
     with open(name_catalog) as csvfile:
-        read_csv = csv.reader(csvfile, skipinitialspace=False, delimiter=',')
+        read_csv = csv.reader(csvfile, skipinitialspace=False, delimiter=delimiter)
         for row in read_csv:
             lon.append(float(row[0]))
             lat.append(float(row[1]))
-            year.append(int(row[2]))
-            month.append(int(row[3]))
-            day.append(int(row[4]))
+            year.append(int(float(row[2])))
+            month.append(int(float(row[3])))
+            day.append(int(float(row[4])))
             mag.append(round(float(row[5]), 1))
             depth.append(float(row[6]))
-            hour.append(int(row[7]))
-            minute.append(int(row[8]))
+            hour.append(int(float(row[7])))
+            minute.append(int(float(row[8])))
             sec.append(round(float(row[9]), 2))
     nrows2 = len(lon)
     ncols = 10
@@ -282,8 +226,7 @@ def acquisition_xml(depth_m, mmin, xmin, xmax, ymin, ymax, time_start, time_end)
 
 
 def serial_time(input_):
-    # Converts the input date (string format) or date vectors
-    # (year, month, day, hour, minute, second) into timestamps
+    # Converts the input date (string format) or date vectors (year, month, day, hour, minute, second) into timestamps
     # Origin time: Year 0, Month 0, Day 0 (same as Matlab)
 
     import datetime
@@ -337,21 +280,22 @@ def timestamp_to_datetime(timestamp):
     return date_out
 
 
-def lilliefors(magcat, mmin):
+def lilliefors(magcat, mmin, alpha):
     # Estimates magnitude of completeness with Lilliefors test (Clauset et al., 2009)
     from statsmodels.stats.diagnostic import lilliefors as lillie
     from numpy import random
 
     bin_m = 0.1
-    incert = ((random.randint(0, 10000, size=len(magcat)))-5000)/100000
+    incert = ((random.randint(0, 10001, size=len(magcat))) - 5000) / 100000
     mag = magcat[:] + incert[:]
     upperlim = 40
 
     for i in range(int(mmin * 10), upperlim, 1):
-        magsel = ([mgev for mgev in mag if mgev >= i / 10])
-        magselmin = [x - float(i / 10) for x in magsel]
+        lowlim = float(i / 10) - bin_m / 2
+        magsel = ([mgev for mgev in mag if mgev > lowlim])
+        magselmin = [x - lowlim for x in magsel]
         kstest, pvalue_lilli = lillie(magselmin, dist='exp')
-        if pvalue_lilli < 0.05:
+        if pvalue_lilli < alpha:
             continue
         else:
             break
@@ -447,25 +391,26 @@ def b_value(magcat, mc):
     return b, deltab, sigma, avalue, magcat_new
 
 
-def bootstrap_mc(mag_data, mmin):
+def bootstrap_mc(mag_data, mmin, alpha):
     # Estimates uncertainty on magnitude of completeness mc by bootstrap method
 
     import numpy as np
 
-    iterations = 100
+    iterations = 200
     mc_bootstrap = []
     for _ in range(iterations):
         boot = np.random.choice(mag_data, size=len(mag_data), replace=True)
-        boot_mc, _ = lilliefors(boot, mmin)
+        boot_mc, _ = lilliefors(boot, mmin, alpha)
         mc_bootstrap.append(boot_mc)
     mc_sigma_bootstrap = np.std(mc_bootstrap)  # mc standard deviation
 
     return mc_sigma_bootstrap
 
 
-def mc_vs_time(magcat, mmin, mc_ok, serial_times, size, step):
-    # Analyses how the magnitude of completness mc varies with time and identifies
-    # critical regions ("STAI gaps"), where mc > mc_ok + sigma
+def mc_vs_time(magcat, magcat_presequence, mmin, mc_ok, alpha, serial_times, size, step):
+    # Analyses how the magnitude of completeness mc varies with time and identifies
+    # critical regions ("STAI gaps"), where mc >= mc_ok + 2 * sigma
+    # mc_ok is the reference value for mc estimated for the pre-sequence period
 
     import numpy as np
     import matplotlib.pyplot as plt
@@ -473,8 +418,8 @@ def mc_vs_time(magcat, mmin, mc_ok, serial_times, size, step):
     from pandas.plotting import register_matplotlib_converters
     register_matplotlib_converters()
 
-    mc_ok_sigma = bootstrap_mc(magcat, mmin)
-    upper_lim = mc_ok + mc_ok_sigma
+    mc_ok_sigma = bootstrap_mc(magcat_presequence, mmin, alpha)
+    upper_lim = mc_ok + 2 * mc_ok_sigma
 
     i = np.arange(0, len(magcat) - size, step)  # starting indexes of the windows
 
@@ -484,16 +429,16 @@ def mc_vs_time(magcat, mmin, mc_ok, serial_times, size, step):
     t_window = []  # time of the moving window (represented by the time of the last event within each window)
     for j in i:
         window = magcat[j: j + size]
-        mc_new, _ = lilliefors(window, mmin)
+        mc_new, _ = lilliefors(window, mmin, alpha)
         mc_time.append(mc_new)
         t_window.append(serial_times[j + size])
 
-        # Temporal bounds of the STAI gaps (where mc > mc_ok + sigma)
+    # Find the temporal bounds of the STAI gaps (where mc >= mc_ok + 2 * sigma)
     tmp_hole_lower_lim = []
     tmp_hole_upper_lim = []
     for i in range(len(t_window) - 1):
 
-        # If these conditions are met, mc is exceeding the upper limit (mc >= mc_ok + sigma)
+        # If these conditions are met, mc is exceeding the upper limit (mc >= mc_ok + 2 * sigma)
         # --> STAI gap starts
         if i == 0:
             if mc_time[i] >= upper_lim:
@@ -504,27 +449,28 @@ def mc_vs_time(magcat, mmin, mc_ok, serial_times, size, step):
             if (mc_time[i] >= upper_lim and mc_time[i - 1] < upper_lim):
                 # Set the STAI gap starting time to the time of the largest shock in the step,
                 # which has caused the raise of the magnitude of completeness
-                idx_critical = [idx for idx, val in enumerate(serial_times) if t_window[i - 2] <= val <= t_window[i]]
+                idx_critical = [idx for idx, val in enumerate(serial_times) if t_window[i - 1] <= val <= t_window[i]]
                 val = magcat[idx_critical]
                 iidx_main = [j for j, v in enumerate(val) if v == max(val)]
                 idx_main = idx_critical[iidx_main[0]]
                 tmp_hole_lower_lim.append(serial_times[idx_main])
 
-        # If these conditions are met, mc is lower than the upper limit
-        # --> STAI gap ends
-        if mc_time[i] >= upper_lim and mc_time[i + 1] < upper_lim:
-            tmp_hole_upper_lim.append(t_window[i])
+        # If these conditions are met STAI gap ends
+        if i == len(t_window) - 2:
+            if mc_time[i] >= upper_lim and mc_time[i + 1] >= upper_lim:
+                tmp_hole_upper_lim.append(t_window[i + 1])
+        else:
+            if mc_time[i] >= upper_lim and mc_time[i + 1] < upper_lim:
+                tmp_hole_upper_lim.append(t_window[i])
 
     # Exclude too small gaps, which could simply arise from statistical fluctuations  of the magnitude of completeness
-    a, b = [], []
+    hole_lower_lim , hole_upper_lim = [], []
     for j in range(len(tmp_hole_lower_lim)):
         index = [idx for idx, val in enumerate(serial_times) if
                  tmp_hole_lower_lim[j] <= val < tmp_hole_upper_lim[j]]
-        if len(index) > 2 * step:
-            a.append(tmp_hole_lower_lim[j])
-            b.append(tmp_hole_upper_lim[j])
-    hole_lower_lim = a
-    hole_upper_lim = b
+        if len(index) >= 2 * step:
+            hole_lower_lim.append(tmp_hole_lower_lim[j])
+            hole_upper_lim.append(tmp_hole_upper_lim[j])
 
     # Extract mc and relative times within each STAI gap
     mc_times_hole, mc_hole = [], []
@@ -536,22 +482,19 @@ def mc_vs_time(magcat, mmin, mc_ok, serial_times, size, step):
         mc_hole.append(tmp_mc_hole)
 
     # plot mc vs time
-    dates1 = [timestamp_to_datetime(t_window[i]) for i in range(len(t_window))]
+    t_window_plot = [val for idx, val in enumerate(t_window) if val >= hole_lower_lim[0]]
+    idx_t_window_plot = [idx for idx, val in enumerate(t_window) if val >= hole_lower_lim[0]]
+    dates1 = [timestamp_to_datetime(t_window_plot[i]) for i in range(len(t_window_plot))]
     datenums1 = mdates.date2num(dates1)
-
-    x_holes = hole_lower_lim + hole_upper_lim
-    dates2 = [timestamp_to_datetime(x_holes[i]) for i in range(len(x_holes))]
-    datenums2 = mdates.date2num(dates2)
+    mc_time_plot = [mc_time[i] for i in idx_t_window_plot]
 
     fig, ax = plt.subplots()
     ax.xaxis_date()
-    fmt = mdates.DateFormatter('%m/%Y')
+    fmt = mdates.DateFormatter('%m/%y')
     ax.xaxis.set_major_formatter(fmt)
-    ax.plot(datenums1, mc_time, label='Mc vs Time', ls='-')
-    ax.fill_between(datenums1, upper_lim, mc_time,
-                    where=upper_lim <= mc_time, color='C1', alpha=0.7, label='Mc >= mc_ok + sigma')
-    for p in datenums2:
-        plt.axvline(x=p, ls='--', linewidth=1, color='C2')
+    ax.plot(datenums1, mc_time_plot, label='Mc(t)', ls='-')
+    ax.fill_between(datenums1, upper_lim, mc_time_plot,
+                    where=upper_lim <= mc_time_plot, color='C1', alpha=0.7, label='$ M_{c} \geq M^{*}_{c} + 2 \sigma$')
     ax.set_xlabel("Time")
     ax.set_ylabel("Mc")
     ax.legend(loc='upper right')
@@ -567,7 +510,7 @@ def map_plot(lon1, lat1, lon2, lat2, llcrnrlon, llcrnrlat, urcrnrlon, urcrnrlat)
 
     m = Basemap(projection='merc', resolution='i', llcrnrlon=llcrnrlon, llcrnrlat=llcrnrlat,
                 urcrnrlon=urcrnrlon, urcrnrlat=urcrnrlat)
-    
+
     try:
         m.drawcoastlines(linewidth=0.5)
     except:
@@ -577,7 +520,7 @@ def map_plot(lon1, lat1, lon2, lat2, llcrnrlon, llcrnrlat, urcrnrlon, urcrnrlat)
     parallels = np.arange(-90, 90, 0.5)
     meridians = np.arange(-180, 180, 0.5)
     m.drawparallels(parallels, labels=[1, 0, 0, 0], fontsize=10, dashes=[1, 5])
-    m.drawmeridians(meridians, labels=[0, 0, 1, 0], fontsize=10, dashes=[1, 5])
+    m.drawmeridians(meridians, labels=[0, 0, 1, 0], fontsize=10, dashes=[1, 5], rotation=45)
 
     x1, y1 = m(lon1, lat1)
     x2, y2 = m(lon2, lat2)
@@ -607,7 +550,6 @@ def spatial_smoothing(mc_ok, subcatalog, xmin, xmax, ymin, ymax):
     Smooth = np.zeros((len(X) * len(Y), 5))
     Smooth[:, 0] = np.reshape(xi, (len(X) * len(Y)))
     Smooth[:, 1] = np.reshape(yi, (len(X) * len(Y)))
-    Smooth[:, 2] = mc_ok * np.ones((len(X) * len(Y)))
     onetoten = range(0, rows_cat)
     for i in onetoten:
         A = (np.sin(Smooth[:, 1] * pi / 180) * np.sin(float(subcatalog[i, 1]) * pi / 180) + np.cos(
@@ -641,22 +583,48 @@ def trainv(lat1, long1, distx, disty):
     return lat2, lon2
 
 
-def ghost_element(catalog_sel, mmin, mc_ok, magcat, b, size, step, llcrnrlon, llcrnrlat, urcrnrlon, urcrnrlat):
+def magnitude_distribution(magcat):
+    import numpy as np
+    import math
+
+    min_m = min(magcat)
+    max_m = max(magcat)
+    bin_m = 0.1
+
+    bin_edges = np.arange(min_m, max_m + bin_m, bin_m)
+    bin_counts = np.zeros(len(bin_edges), dtype=int)
+    for mag in magcat:
+        bin = int(round(mag / bin_m - min_m*10))
+        bin_counts[bin] += 1
+
+    idx_zeros = np.where(bin_counts == 0)[0]
+    bin_counts = np.delete(bin_counts, idx_zeros)
+    bin_edges = np.delete(bin_edges, idx_zeros)
+
+    log_bin_counts = [math.log10(i) for i in bin_counts]  # non-cumulative counts
+
+    cum_counts = np.cumsum(bin_counts[::-1])[::-1]
+    log_cum_counts = [math.log10(i) for i in cum_counts]  # cumulative counts
+
+    return bin_edges, log_bin_counts, log_cum_counts
+
+
+def ghost_element(catalog_sel, mmin, mc_ok, magcat, magcat_presequence, b,
+                  size, step, llcrnrlon, llcrnrlat, urcrnrlon, urcrnrlat,
+                  alpha, serial_times):
     # Simulates magnitude, time, lat and lon of ghost events
 
-    import random
+    from numpy import random
     import matplotlib.pyplot as plt
     import matplotlib.dates as mdates
     import math
     import numpy as np
-    from datetime import datetime as dt
-
-    serial_times = serial_time(catalog_sel)
 
     bin_m = 0.1
 
     # "hole" --> STAI gap
-    hole_lower_lim, hole_upper_lim, mc_times_hole, mc_hole = mc_vs_time(magcat, mmin, mc_ok, serial_times, size, step)
+    hole_lower_lim, hole_upper_lim, mc_times_hole, mc_hole = mc_vs_time(magcat, magcat_presequence, mmin, mc_ok,
+                                                                        alpha, serial_times, size, step)
 
     m_ghost, t_ghost, n_ghost_hole = [], [], []
     for i in range(len(hole_lower_lim)):  # iterate over all the STAI gaps
@@ -693,7 +661,8 @@ def ghost_element(catalog_sel, mmin, mc_ok, magcat, b, size, step, llcrnrlon, ll
                 while count <= n_ghost:
 
                     u = random.random()
-                    random_m = round((- 1 / b * math.log10(u) + mc_ok - bin_m / 2) * 10) / 10
+
+                    random_m = round((- 1/b * math.log10(u) + mc_ok - bin_m/2) * 10)/10
 
                     if random_m <= mc_step:
 
@@ -725,11 +694,13 @@ def ghost_element(catalog_sel, mmin, mc_ok, magcat, b, size, step, llcrnrlon, ll
     # Simulate lat e lon of ghost events
     lon_ghost, lat_ghost = [], []
     for i in range(len(hole_lower_lim)):  # iterate over all the STAI gaps
+        lon_ghost_hole = []
+        lat_ghost_hole = []
         index = [idx for idx, val in enumerate(serial_times) if hole_lower_lim[i] <= val <= hole_upper_lim[i]]
         subcatalog_tmp = catalog_sel[index]
         mag_big_shock = max(subcatalog_tmp[:, MagnColumn])
-        lat_big_shock = subcatalog_tmp[(subcatalog_tmp[:, MagnColumn] == mag_big_shock), LatColumn]
-        lon_big_shock = subcatalog_tmp[(subcatalog_tmp[:, MagnColumn] == mag_big_shock), LonColumn]
+        lat_big_shock = subcatalog_tmp[(subcatalog_tmp[:, MagnColumn] == mag_big_shock), LatColumn][0]
+        lon_big_shock = subcatalog_tmp[(subcatalog_tmp[:, MagnColumn] == mag_big_shock), LonColumn][0]
 
         moment_big_shock = 10 ** (3 / 2 * (mag_big_shock + 10.7)) * 10 ** (-7)
         l_big_shock = 10 ** (-5.20 + 0.35 * math.log10(moment_big_shock))  # rupture length (from Mai and Beroza (2000))
@@ -748,10 +719,8 @@ def ghost_element(catalog_sel, mmin, mc_ok, magcat, b, size, step, llcrnrlon, ll
         idx = np.argsort(smoothed_rate)
         cumulative_sum = np.cumsum(smoothed_rate[idx])
 
-        u = []
-        for j in range(n_ghost_hole[i]):  # Generate n=n_ghost_hole[i] random numbers btw 0 and 1
-            rand = random.random()
-            u.append(rand)
+        # Generate n=n_ghost_hole[i] random numbers btw 0 and 1
+        u = random.random(n_ghost_hole[i])
 
         for j in range(len(u)):
             if u[j] < cumulative_sum[0]:
@@ -763,8 +732,11 @@ def ghost_element(catalog_sel, mmin, mc_ok, magcat, b, size, step, llcrnrlon, ll
                         rand_lon = lon_cell_grid[idx[k - 1]] + random.random() * sbin
                         rand_lat = lat_cell_grid[idx[k - 1]] + random.random() * sbin
 
-            lon_ghost.append(round(rand_lon, 2))
-            lat_ghost.append(round(rand_lat, 2))
+            lon_ghost_hole.append(round(rand_lon, 2))
+            lat_ghost_hole.append(round(rand_lat, 2))
+
+        lon_ghost.extend(lon_ghost_hole)
+        lat_ghost.extend(lat_ghost_hole)
 
     idx_magcatok = [idx for idx, val in enumerate(magcat) if val >= mc_ok]
     magcat_ok = [magcat[i] for i in idx_magcatok]
@@ -780,14 +752,17 @@ def ghost_element(catalog_sel, mmin, mc_ok, magcat, b, size, step, llcrnrlon, ll
 
     fig, ax = plt.subplots(2)
     fmt = mdates.DateFormatter('%m/%Y')
-    ax[0].plot(datenums1, magcat_ok, 'o', markersize=3, markerfacecolor='0.3', markeredgecolor='None', label='Original data')
-    ax[0].plot(datenums2, m_ghost, 'o', markersize=3, markerfacecolor='steelblue', markeredgecolor='None', label='Replenished data')
+    ax[0].plot(datenums1, magcat_ok, 'o', markersize=3, markerfacecolor='0.3', markeredgecolor='None',
+               label='Original data')
+    ax[0].plot(datenums2, m_ghost, 'o', markersize=3, markerfacecolor='steelblue', markeredgecolor='None',
+               label='Replenished data')
     ax[0].xaxis_date()
     ax[0].xaxis.set_major_formatter(fmt)
     ax[0].set_xlabel("Time")
     ax[0].set_ylabel("Magnitude")
     ax[0].legend(loc='upper left')
-    ax[1].plot(datenums1, magcat_ok, 'o', markersize=3, markerfacecolor='0.3', markeredgecolor='None', label='Original data')
+    ax[1].plot(datenums1, magcat_ok, 'o', markersize=3, markerfacecolor='0.3', markeredgecolor='None',
+               label='Original data')
     ax[1].xaxis_date()
     ax[1].xaxis.set_major_formatter(fmt)
     ax[1].set_xlabel("Time")
@@ -811,7 +786,8 @@ def ghost_element(catalog_sel, mmin, mc_ok, magcat, b, size, step, llcrnrlon, ll
     return m_ghost, t_ghost, lon_ghost, lat_ghost
 
 
-def replenished_catalog(catalog_sel, magcat, mmin, mc_ok, b, size, step, llcrnrlon, llcrnrlat, urcrnrlon, urcrnrlat):
+def replenished_catalog(catalog_sel, magcat, magcat_presequence, mmin, mc_ok, b, size, step,
+                       llcrnrlon, llcrnrlat, urcrnrlon, urcrnrlat, alpha, serial_times):
     # Returns the replenished catalog (original + ghost events)
 
     import numpy as np
@@ -822,10 +798,9 @@ def replenished_catalog(catalog_sel, magcat, mmin, mc_ok, b, size, step, llcrnrl
     path = "fig"
     os.mkdir(path)
 
-    serial_times = serial_time(catalog_sel)
-
-    m_ghost, t_ghost, lon_ghost, lat_ghost = ghost_element(catalog_sel, mmin, mc_ok, magcat, b, size, step,
-                                                           llcrnrlon, llcrnrlat, urcrnrlon, urcrnrlat)
+    m_ghost, t_ghost, lon_ghost, lat_ghost = ghost_element(catalog_sel, mmin, mc_ok, magcat, magcat_presequence, b,
+                                                           size, step, llcrnrlon, llcrnrlat, urcrnrlon, urcrnrlat,
+                                                           alpha, serial_times)
 
     magcat_compl_idx = [idx for idx, val in enumerate(magcat) if val >= mc_ok]
 
@@ -914,4 +889,25 @@ def replenished_catalog(catalog_sel, magcat, mmin, mc_ok, b, size, step, llcrnrl
         writer = csv.writer(f, delimiter=' ', skipinitialspace=False, quoting=csv.QUOTE_NONE, lineterminator='\n')
         for x in rows:
             writer.writerow(x)
+
+    bin_edges_original, log_bin_counts_original, log_cum_counts_original = \
+        magnitude_distribution(catalog_sel[:, MagnColumn])
+    bin_edges_replenished, log_bin_counts_replenished, log_cum_counts_replenished = \
+        magnitude_distribution(replenished_catalog[:, MagnColumn])
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(8, 6))
+    ax1.plot(bin_edges_original, log_bin_counts_original, 'o', color='0.5', markersize=3, label='Non-cumulative counts')
+    ax1.plot(bin_edges_original, log_cum_counts_original, 'ok', markersize=3, label='Cumulative counts')
+    ax1.legend(loc='upper right')
+    ax1.set_xlabel("Magnitude")
+    ax1.set_ylabel("Frequency")
+    ax1.set_title("Original Catalog")
+    ax2.plot(bin_edges_replenished, log_bin_counts_replenished, 'o', color='0.5', markersize=3, label='Non-cumulative counts')
+    ax2.plot(bin_edges_replenished, log_cum_counts_replenished, 'ok', markersize=3, label='Cumulative counts')
+    ax2.legend(loc='upper right')
+    ax2.set_xlabel("Magnitude")
+    ax2.set_ylabel("Frequency")
+    ax2.set_title("Replenished Catalog")
+    plt.savefig('fig/Magnitude_Frequency_Distribution.pdf', format='pdf')
+
     return replenished_catalog
