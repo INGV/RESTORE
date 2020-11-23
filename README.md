@@ -6,7 +6,7 @@ For any comment, question or suggestion write to:
 <angela.stallone@ingv.it>
 
 This project has been founded by the Seismic Hazard Center
-(Centro di Pericolosità Sismica, CPS, at the Istituto Nazionale di Geosica e Vulcanologia, INGV)
+(Centro di Pericolosità Sismica, CPS, at the Istituto Nazionale di Geofisica e Vulcanologia, INGV)
 
 !!! Latest revision: November, 2020 !!!
 
@@ -42,11 +42,15 @@ Compare the replenished catalog with *ETAS_complete.txt*, to check how the missi
 
 <h2>Requirements</h2>
 
-Python >= 3
+Python 3
 
 statsmodels >= 0.12.1
 
+basemap <= 1.2.1
+
 matplotlib < 3.0.0
+
+
 
 
 
