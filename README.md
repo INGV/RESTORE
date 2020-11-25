@@ -1,4 +1,6 @@
-<h1>RESTORE: REal catalogs STOchastic REplenishment</h1>
+
+![alt text](https://github.com/angystallone/Seismology_Stuff/blob/main/figures/RESTORE_logo.png?raw=true)
+
 
 Written by Angela Stallone with help from Giuseppe Falcone
 
