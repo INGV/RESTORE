@@ -1,26 +1,24 @@
 """
-|--------------------------------------------------------------------------|
 
 RESTORE: REal catalogs STOchastic REplenishment
 Written by Angela Stallone with help from Giuseppe Falcone
-
 For any comment, question or suggestion write to:
 angela.stallone@ingv.it
 
 This project has been founded by the Seismic Hazard Center
-(Centro di Pericolosità Sismica, CPS, at the Istituto Nazionale di Geosica e Vulcanologia, INGV)
+(Centro di Pericolosità Sismica, CPS, at the Istituto Nazionale di Geofisica e Vulcanologia, INGV)
 
 |---------------------------|
-Latest revision: November, 2020
+
+Latest revision: December, 2020
+
 |---------------------------|
 
 To cite:
-
 Stallone A., Falcone G. 2020. Missing earthquake data reconstruction in the space-time-magnitude domain.
-Preprint on https://essoar.org (2020) DOI: 10.1002/essoar.10504916.1
+Preprint on https://essoar.org (2020) DOI: 10.1002/essoar.10504916.2
 
 |--------------------------------------------------------------------------|
-
 
 ABOUT
 
@@ -320,8 +318,8 @@ def b_value_zmap(magcat):
     y = np.arange(0, nevents)
     rad_mag_cutoff = np.zeros(shape=(len(x), nevents))
     ntotmag = np.zeros(shape=(len(x)))
-    differenza = np.zeros(shape=(len(x)))
-    somma = np.zeros(shape=(len(x)))
+    difference = np.zeros(shape=(len(x)))
+    sumup = np.zeros(shape=(len(x)))
     rad_mag_cutoff.fill(np.nan)
     idx = -1
     for i in x:
@@ -353,9 +351,9 @@ def b_value_zmap(magcat):
     flag = 0
     for i in q:
         idx = idx + 1
-        differenza[idx] = abs(b_ave[idx] - b_cutoff[idx])
-        somma[idx] = b_ave[idx] + b_cutoff[idx]
-        if differenza[idx] <= deltab_value[idx] and abs(dbi_old[idx]) <= 0.03:
+        difference[idx] = abs(b_ave[idx] - b_cutoff[idx])
+        sumup[idx] = b_ave[idx] + b_cutoff[idx]
+        if difference[idx] <= deltab_value[idx] and abs(dbi_old[idx]) <= 0.03:
             sigmacomp = b_cutoff[idx] / sqrt(ntotmag[idx])
             avaluecomp = log10(ntotmag[idx]) + b_cutoff[idx] * x[idx]
             if flag == 0:
@@ -472,6 +470,8 @@ def mc_vs_time(magcat, magcat_presequence, mmin, mc_ok, alpha, serial_times, siz
             hole_lower_lim.append(tmp_hole_lower_lim[j])
             hole_upper_lim.append(tmp_hole_upper_lim[j])
 
+    print('Found:', len(hole_lower_lim), 'STAI gaps')
+
     # Extract mc and relative times within each STAI gap
     mc_times_hole, mc_hole = [], []
     for j in range(len(hole_lower_lim)):
@@ -488,9 +488,9 @@ def mc_vs_time(magcat, magcat_presequence, mmin, mc_ok, alpha, serial_times, siz
     datenums1 = mdates.date2num(dates1)
     mc_time_plot = [mc_time[i] for i in idx_t_window_plot]
 
-    fig, ax = plt.subplots()
+    fig, ax = plt.subplots(figsize=(8, 6))
     ax.xaxis_date()
-    fmt = mdates.DateFormatter('%m/%y')
+    fmt = mdates.DateFormatter('%b %Y')
     ax.xaxis.set_major_formatter(fmt)
     ax.plot(datenums1, mc_time_plot, label='Mc(t)', ls='-')
     ax.fill_between(datenums1, upper_lim, mc_time_plot,
@@ -533,7 +533,7 @@ def map_plot(lon1, lat1, lon2, lat2, llcrnrlon, llcrnrlat, urcrnrlon, urcrnrlat)
     return m
 
 
-def spatial_smoothing(mc_ok, subcatalog, xmin, xmax, ymin, ymax):
+def spatial_smoothing(subcatalog, xmin, xmax, ymin, ymax):
     # Smooth seismicity with Gaussian kernel
 
     import numpy as np
@@ -691,6 +691,8 @@ def ghost_element(catalog_sel, mmin, mc_ok, magcat, magcat_presequence, b,
 
         n_ghost_hole.append(sum(n_ghost_tmp))
 
+        print('Filled', i+1, 'over a total of', len(hole_lower_lim), 'STAI gaps with', sum(n_ghost_tmp), 'events')
+
     # Simulate lat e lon of ghost events
     lon_ghost, lat_ghost = [], []
     for i in range(len(hole_lower_lim)):  # iterate over all the STAI gaps
@@ -712,8 +714,7 @@ def ghost_element(catalog_sel, mmin, mc_ok, magcat, magcat_presequence, b,
                      (subcatalog_tmp[:, LatColumn] >= ymin) & (subcatalog_tmp[:, LatColumn] <= ymax) &
                      (subcatalog_tmp[:, LonColumn] >= xmin) & (subcatalog_tmp[:, LonColumn] <= xmax), :]
 
-        lon_cell_grid, lat_cell_grid, smoothed_rate, sbin = spatial_smoothing(mc_ok, subcatalog, xmin, xmax, ymin,
-                                                                              ymax)
+        lon_cell_grid, lat_cell_grid, smoothed_rate, sbin = spatial_smoothing(subcatalog, xmin, xmax, ymin, ymax)
 
         # Simulate lat and lon of ghost eqs
         idx = np.argsort(smoothed_rate)
@@ -750,8 +751,8 @@ def ghost_element(catalog_sel, mmin, mc_ok, magcat, magcat_presequence, b,
     datenums1 = mdates.date2num(dates1)
     datenums2 = mdates.date2num(dates2)
 
-    fig, ax = plt.subplots(2)
-    fmt = mdates.DateFormatter('%m/%Y')
+    fig, ax = plt.subplots(2, figsize=(10, 6))
+    fmt = mdates.DateFormatter('%b %Y')
     ax[0].plot(datenums1, magcat_ok, 'o', markersize=3, markerfacecolor='0.3', markeredgecolor='None',
                label='Original data')
     ax[0].plot(datenums2, m_ghost, 'o', markersize=3, markerfacecolor='steelblue', markeredgecolor='None',
@@ -796,7 +797,8 @@ def replenished_catalog(catalog_sel, magcat, magcat_presequence, mmin, mc_ok, b,
     import os
 
     path = "fig"
-    os.mkdir(path)
+    if not os.path.exists(path):
+        os.mkdir(path)
 
     m_ghost, t_ghost, lon_ghost, lat_ghost = ghost_element(catalog_sel, mmin, mc_ok, magcat, magcat_presequence, b,
                                                            size, step, llcrnrlon, llcrnrlat, urcrnrlon, urcrnrlat,
