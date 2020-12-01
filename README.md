@@ -21,7 +21,7 @@ Preprint on <https://essoar.org> (2020) DOI: 10.1002/essoar.10504916.2
 
 Zenodo repository:
 
-<a href="https://doi.org/10.5281/zenodo.4287473"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.4287473.svg" alt="DOI"></a>
+<https://doi.org/10.5281/zenodo.3952182>
 
 <h2>About</h2>
 
