@@ -10,14 +10,14 @@ For any comment, question or suggestion write to:
 This project has been founded by the Seismic Hazard Center
 (Centro di Pericolosità Sismica, CPS, at the Istituto Nazionale di Geofisica e Vulcanologia, INGV)
 
-**Latest revision: November, 2020** 
+**Latest revision: December, 2020** 
 
 |---------------------------------------------------------------------------------------------------------|
 
 To cite:
 
 Stallone A., Falcone G. 2020. *Missing earthquake data reconstruction in the space-time-magnitude domain.*
-Preprint on <https://essoar.org> (2020) DOI: 10.1002/essoar.10504916.1
+Preprint on <https://essoar.org> (2020) DOI: 10.1002/essoar.10504916.2
 
 Zenodo repository:
 
@@ -52,9 +52,6 @@ Python 3
 
 statsmodels >= 0.12.1
 
-basemap <= 1.2.1
-
-matplotlib < 3.0.0
 
 
 
