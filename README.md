@@ -10,14 +10,9 @@ For any comment, question or suggestion write to:
 This project has been founded by the Seismic Hazard Center
 (Centro di Pericolosità Sismica, CPS, at the Istituto Nazionale di Geofisica e Vulcanologia, INGV)
 
-**Latest revision: December, 2020** 
+**Latest revision: March, 2021** 
 
 |---------------------------------------------------------------------------------------------------------|
-
-To cite:
-
-Stallone A., Falcone G. 2020. *Missing earthquake data reconstruction in the space-time-magnitude domain.*
-Preprint on <https://essoar.org> (2020) DOI: 10.1002/essoar.10504916.2
 
 Zenodo repository:
 
@@ -31,14 +26,14 @@ It is based on a stochastic gap-filling procedure, which reconstructs the missin
 
 **RESTORE files**:
 
-*Run_RESTORE.py* loads the seismic catalog, sets the input parameters and runs *RESTORE.py*
+*Run_RESTORE.py* loads the seismic catalog and the input parameters, then runs the script *RESTORE.py*
 
 *RESTORE.py* is the main module
 
-*Synthetic_example_ETAS.py* runs the synthetic test (uses *ETAS_incomplete.txt* as input dataset)
 
+**Synthetic_Test**:
 
-**Dataset included**:
+*Run_Synthetic_Test.py* runs the synthetic test (uses *ETAS_incomplete.txt* as input dataset)
 
 *ETAS_complete.txt* is the synthetic dataset (before STAI modeling)
 
@@ -51,6 +46,10 @@ Compare the replenished catalog with *ETAS_complete.txt*, to check how the missi
 Python 3
 
 statsmodels >= 0.12.1
+
+Basemap
+
+mc_lilliefors (download it here: <http://doi.org/10.5281/zenodo.4162496>)
 
 
 
