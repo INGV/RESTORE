@@ -10,6 +10,8 @@ For any comment, question or suggestion write to:
 This project has been founded by the Seismic Hazard Center
 (Centro di Pericolosità Sismica, CPS, at the Istituto Nazionale di Geofisica e Vulcanologia, INGV)
 
+To cite: Stallone, A., & Falcone, G. (2021). Missing Earthquake Data Reconstruction in the Space‐Time‐Magnitude Domain. Earth and Space Science, 8(8), e2020EA001481. [https://doi.org/10.1029/2020EA001481]
+
 **Latest revision: March, 2021** 
 
 |---------------------------------------------------------------------------------------------------------|
