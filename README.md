@@ -51,10 +51,7 @@ statsmodels >= 0.12.1
 
 Basemap
 
-mc_lilliefors (download it here: <http://doi.org/10.5281/zenodo.4162496>)
-
-
-
+mc_lilliefors (download it <a href="https://zenodo.org/record/4162497#.YodBnS8QMwc">here</a>)
 
 
 
