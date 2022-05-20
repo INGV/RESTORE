@@ -20,7 +20,7 @@ Zenodo repository:
 
 <h2>About</h2>
 
-RESTORE is a powerful tool to takle the short-term aftershock incompleteness issue (STAI).
+RESTORE is a powerful tool to tackle the short-term aftershock incompleteness issue (STAI).
 It is based on a stochastic gap-filling procedure, which reconstructs the missing events in the space-time-magnitude domain based on empirical earthquake properties. The subsets of the catalog that are affected by the STAI issue are automatically detected.
 
 
