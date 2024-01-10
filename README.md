@@ -22,13 +22,14 @@ Zenodo repository:
 
 <h2>About</h2>
 
-RESTORE is a powerful tool to tackle the short-term aftershock incompleteness issue (STAI).
-It is based on a stochastic gap-filling procedure, which reconstructs the missing events in the space-time-magnitude domain based on empirical earthquake properties. The subsets of the catalog that are affected by the STAI issue are automatically detected.
+RESTORE is a Python tool tackling the short-term aftershock incompleteness issue (STAI).
+It is based on a stochastic gap-filling procedure which reconstructs the missing events in the space-time-magnitude domain based on empirical earthquake properties. 
+The subsets of the catalog affected by the STAI issue are automatically detected.
 
 
 **RESTORE files**:
 
-*Run_RESTORE.py* loads the seismic catalog and the input parameters, then runs the script *RESTORE.py*
+*Run_RESTORE.py* loads the seismic catalog and the input parameters provided by the user, then runs the script *RESTORE.py*
 
 *RESTORE.py* is the main module
 
@@ -45,13 +46,6 @@ Compare the replenished catalog with *ETAS_complete.txt*, to check how the missi
 
 <h2>Requirements</h2>
 
-Python 3
-
-statsmodels >= 0.12.1
-
-Basemap
-
-mc_lilliefors (download it <a href="https://zenodo.org/record/4162497#.YodBnS8QMwc">here</a>)
-
+mc_lilliefors (download it <a href="https://gitlab.com/marcus.herrmann/mc-lilliefors">here</a>)
 
 
