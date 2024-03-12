@@ -29,25 +29,25 @@ The subsets of the catalog affected by the STAI issue are automatically detected
 
 **RESTORE files**:
 
-*Run_RESTORE.py* loads the seismic catalog and the input parameters provided by the user, then runs the script *RESTORE.py*
+`Run_RESTORE.py` --> loads the seismic catalog and the input parameters provided by the user, then runs the script `RESTORE.py`
 
-*RESTORE.py* is the main module
+`RESTORE.py` --> is the main module
 
-*input_file.txt* file containing the input parameters
+`input_file.txt` --> file containing the input parameters
 
 
 **Synthetic_Test**: [v 2.0.0]
 
-*Run_Synthetic_Test.py* runs the synthetic test (uses *ETAS_incomplete.txt* as input dataset)
+`Run_Synthetic_Test.py` runs the synthetic test (uses `ETAS_incomplete.txt` as input dataset)
 
-*ETAS_complete.txt* is the synthetic dataset (before STAI modeling)
+`ETAS_complete.txt` is the synthetic dataset (before STAI modeling)
 
-*ETAS_incomplete.txt* is the synthetic dataset (after STAI modeling)
+`ETAS_incomplete.txt` is the synthetic dataset (after STAI modeling)
 
-Compare the replenished catalog with *ETAS_complete.txt*, to check how the missing events are reconstructed by RESTORE
+Compare the replenished catalog with `ETAS_complete.txt`, to check how the missing events are reconstructed by RESTORE
 
-<h2>Requirements</h2>
+<h2>Required external modules</h2>
 
-mc_lilliefors (download it <a href="https://gitlab.com/marcus.herrmann/mc-lilliefors">here</a>)
+`mc_lilliefors` (download it <a href="https://gitlab.com/marcus.herrmann/mc-lilliefors">here</a>)
 
 
