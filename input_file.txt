@@ -1,0 +1,41 @@
+name_catalog: Horus_Amatrice_ZMAP.txt
+delimiter: ,
+size: 1000
+step: 200
+st_dev_multiplier: 1
+Sigma: 1
+sbin: 0.01
+fault_length_multiplier: 4
+t_end_quiet: 2016,8,24,0,0,0.0
+b: 1
+alpha: 0.05
+mc: None
+depth_distribution: bimodal
+p0: 9,0.1,3500,13,0.3,1000
+
+**************** NOTES ***************
+
+- size: moving-window size (in number of events per window) --> 1000 by default (Mignan and Woessner, 2012).
+
+- step: moving-window step (in number of events per step) --> 250 by default (Mignan and Woessner, 2012).
+
+- st_dev_multiplier: multiplies the Mc standard deviation (Mc Sigma), controls the confidence level for STAI gaps identification; STAI gaps are windows where mc >= mc_ok + n*sigma, where n = st_dev_multiplier; increasing the value of st_dev_multiplier results in a more conservative approach in detecting temporary deviations of Mc.
+
+- Sigma: smoothing distance of the Gaussian kernel, controls the spread of the smoothing; smaller values will result in sharper and more localized smoothing.
+
+- sbin: bin in the latitude and longitude direction (degrees), controls the grid resolution
+
+- fault_length_multiplier: multiplies the fault length rupture, controls the areal extent of the subcatalog where inferences about Mc trend with time are made; smaller values will result in higher resolution of STAI gaps detection, as local seismicity is less diluted.
+
+- t_end_quiet: ending time of the seismically quiescent period.
+
+- b: b-value of the Gutenberg-Richter law (alternatively, it can be estimated with the function provided in RESTORE).
+
+- alpha: significance level for the Lilliefors test.
+
+- mc: reference value for the magnitude of completeness, if set by the user (by default, it is estimated with the function provided in RESTORE).
+
+- depth_distribution: [scipy.optimize.curve_fit] distribution to fit to hypocenter depths, available options are: normal, poisson, lognormal, beta, bimodal.
+
+- p0: [scipy.optimize.curve_fit] initial guess for the parameters of the hypocenter depth distribution: 'mu', 'sigma' (normal), 'mu' (poisson), 'mu', 'sigma' (lognormal), 'a', 'b' (beta), 'mu1', 'sigma1', 'A1', 'mu2', 'sigma2', 'A2' [bimodal].
+

@@ -12,102 +12,83 @@ if __name__ == '__main__':
 
     RESTORE.py requires the following parameters:
 
-    1. Moving-window size (in number of events per window) --> 1000 by default (Mignan and Woessner, 2012)
-    2. Moving-window step (in number of events per step) --> 250 by default (Mignan and Woessner, 2012)
-    3. Space domain for the map plot
-    4. Starting time of the seismic sequence (i.e. ending time of the seismically quiescent period)
-    5. Reference value for the magnitude of completeness, if set by the user (by default, it is estimated with the 
-       function provided in RESTORE)
-    6. b-value for the Gutenberg-Richter law, which by default must be provided by the user (alternatively, it could be 
-       estimated with the function provided in RESTORE)
-    7. alpha, the significance level for the Lilliefors test
-
+    1. Name of the catalog file
+    2. Delimiter of the catalog file
+    3. size: moving-window size (in number of events per window) --> 1000 by default (Mignan and Woessner, 2012)
+    4. step: moving-window step (in number of events per step) --> 250 by default (Mignan and Woessner, 2012)
+    5. st_dev_multiplier: multiplies the Mc standard deviation (Mc Sigma), controls the confidence level for STAI gaps identification; 
+       STAI gaps are windows where mc >= mc_ok + n*sigma, where n = st_dev_multiplier; increasing the value of st_dev_multiplier 
+       results in a more conservative approach in detecting temporary deviations of Mc
+    5. Sigma: smoothing distance of the Gaussian kernel, controls the spread of the smoothing;
+       smaller values will result in sharper and more localized smoothing
+    6. sbin: bin in the latitude and longitude direction (degrees), controls the grid resolution
+    7. fault_length_multiplier: multiplies the fault length rupture N times, controls the areal extent of the 
+       subcatalog where inferences about Mc trend with time are made; 
+       smaller values will result in higher resolution of STAI gaps detection, as local seismicity is less diluted
+    8. Time of big shock causing STAI
+    9. b [optional]: b-value of the Gutenberg-Richter law (alternatively, it can be estimated with the function provided in RESTORE)
+    10. alpha: significance level for the Lilliefors test
+    11. mc [optional]: reference value for the magnitude of completeness, if set by the user (by default, 
+        it is estimated with the function provided in RESTORE)
+    12. depth_distribution: [scipy.optimize.curve_fit] distribution to fit to hypocenter depths 
+        --> normal, poisson, lognormal, beta, bimodal
+    13. p0: [scipy.optimize.curve_fit] initial guess for the parameters of the hypo depth distribution:
+        'mu', 'sigma' (normal), 
+        'mu' (poisson), 
+        'mu', 'sigma' (lognormal), 
+        'a', 'b' (beta), 
+        'mu1', 'sigma1', 'A1', 'mu2', 'sigma2', 'A2' [bimodal]
     """
-    
-    # |---------------------------|
-    # |--- SET INPUT PARAMETERS --|
-    # |---------------------------|
-    
-    # ZMAP catalog name and delimiter
-    name_catalog = ""
-    delimiter = ""
-
-    # Moving window parameters
-    size = 1000
-    step = 250
-
-    # Spatial map domain limits: lower-left longitude, lower-left latitude, upper-right longitude, upper-right latitude
-    llcrnrlon =
-    llcrnrlat =
-    urcrnrlon =
-    urcrnrlat =
-    
-    # Starting time of the seismic sequence (e.g. "2016,8,24,0,0,0.0")
-    tseq = ""
-    
-    # b-value: comment this row if you want RESTORE to estimate the b-value for you! - DEFAULT: user's input
-    b =
-
-    # mc_ok: uncomment this row if you want to provide your reference value for the magnitude of completeness!
-    # - DEFAULT: estimated with RESTORE.lilliefors(magcat_presequence, alpha)
-    # mc_ok =
-
-    # Significance level for the Lilliefors test
-    alpha = 0.05
-
-
-    # ------------------------------------------------------------------------------------------------------------- #
-    # ------------------------------------------------- RESTORE --------------------------------------------------- #
-    # ------------------------------------------------------------------------------------------------------------- #
-
+    import config
     import RESTORE
 
     # |---------------------------|
-    # |--- LOAD (ZMAP) CATALOG ---|
+    # |--- GET INPUT PARAMETERS --|
     # |---------------------------|
+    
+    config_dict = config.load_config('input_file.txt')
+
+    name_catalog = config_dict['name_catalog']
+    delimiter = config_dict['delimiter']
+    size = config_dict['size']
+    step = config_dict['step']
+    st_dev_multiplier = config_dict['st_dev_multiplier']
+    Sigma = config_dict['Sigma']
+    sbin = config_dict['sbin']
+    fault_length_multiplier = config_dict['fault_length_multiplier']
+    t_end_quiet = config_dict['t_end_quiet']
+    b = config_dict['b']
+    alpha = config_dict['alpha']
+    mc = config_dict['mc']
+    depth_distribution = config_dict['depth_distribution']
+    p0 = config_dict['p0'] 
+
+    print(f"Confidence level for STAI gaps = {st_dev_multiplier} * Mc Sigma")
+    print(f"Sigma (smoothing kernel) = {Sigma}")
+    print(f"sbin (spatial grid resolution) = {sbin}°")
+    print(f"alpha Lilliefors test = {alpha}")
+    print(f"Hypo depth distribution to fit = {depth_distribution}")
+    print(f"Hypo depth distribution intial params = {p0}")
+    
+    # ------------------------------------------------------------------------------------------------------------- #
+    # --------------------------------------------- RUN RESTORE --------------------------------------------------- #
+    # ------------------------------------------------------------------------------------------------------------- #
+
   
     catalog_sel = RESTORE.read_catalog_zmap(name_catalog, delimiter)
-
-    # |-----------------------------------------------------------------|
-    # |--- REFERENCE VALUE FOR THE MAGNITUDE OF COMPLETENESS (mc_ok) ---|
-    # |-----------------------------------------------------------------|
+    print(f"----- Loading catalog: {name_catalog} -----")
 
     MagnColumn = 5
-    magcat = catalog_sel[:, MagnColumn]
     
     serial_times = RESTORE.serial_time(catalog_sel)  # time stamps
-    starting_time_sequence = RESTORE.serial_time(tseq)  # timestamp for the starting time of the seismic sequence
-
-    idx_pre_sequence = [idx for idx, val in enumerate(serial_times) if val < starting_time_sequence]
-
-    magcat_presequence = magcat[idx_pre_sequence]
-
-    if 'mc_ok' not in globals():
-        mc_ok = RESTORE.lilliefors(magcat_presequence, alpha)
-
-    # |-------------------------------------------------|
-    # |--- COMPLETE CATALOG (m >= mc_ok) AND B-VALUE ---|
-    # |-------------------------------------------------|
-
-    magcat_compl_idx = [idx for idx, val in enumerate(magcat) if val >= mc_ok]
-    catalog_sel_compl = [catalog_sel[i, :] for i in magcat_compl_idx]
-
-    if 'b' not in globals():
-        b, _, _, _, _ = RESTORE.b_value(magcat, mc_ok)
+    t_start = RESTORE.serial_time(t_end_quiet)  # timestamp for the starting time of the seismic sequence
     
-    # |-----------------------|
-    # |--- RUN RESTORE.py ----|
-    # |-----------------------|
 
-    replenished_catalog = RESTORE.replenished_catalog(catalog_sel, magcat, magcat_presequence, mc_ok, b, size, step,
-                                                       llcrnrlon, llcrnrlat, urcrnrlon, urcrnrlat, alpha, serial_times)
-                                                       
-    # |---------------------------|
-    # |--- LILLIEFORS CHECK.py ---|
-    # |---------------------------|
-    
-    mc_original_cat = RESTORE.lilliefors(catalog_sel[:, MagnColumn], alpha)
-    mc_replenished_cat = RESTORE.lilliefors(replenished_catalog[:, MagnColumn], alpha)
+    replenished_catalog = RESTORE.replenished_catalog(catalog_sel, t_start, mc, b, size, step,
+                                                       st_dev_multiplier, alpha, serial_times, Sigma, sbin, 
+                                                       fault_length_multiplier, depth_distribution, p0)
+                                                    
+    print("----- DONE -----")
 
 
 
