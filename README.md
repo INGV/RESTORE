@@ -58,6 +58,11 @@ url = {https://github.com/INGV/RESTORE}
 }
 ```
 
+Linked article:
+
+Stallone, A., & Falcone, G. (2021). *Missing earthquake data reconstruction in the space‐time‐magnitude domain*. Earth and Space Science, 8(8), e2020EA001481.
+<a href="https://doi.org/10.1029/2020EA001481">https://doi.org/10.1029/2020EA001481</a>
+
 For any comment, question or suggestion write to:
 <angela.stallone@ingv.it>
 
