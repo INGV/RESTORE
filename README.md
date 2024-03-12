@@ -33,8 +33,10 @@ The subsets of the catalog affected by the STAI issue are automatically detected
 
 *RESTORE.py* is the main module
 
+*input_file.txt* file containing the input parameters
 
-**Synthetic_Test**:
+
+**Synthetic_Test**: [v 2.0.0]
 
 *Run_Synthetic_Test.py* runs the synthetic test (uses *ETAS_incomplete.txt* as input dataset)
 
