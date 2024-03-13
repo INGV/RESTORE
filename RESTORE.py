@@ -645,7 +645,7 @@ def magnitude_distribution(magcat):
     bin_edges = np.arange(min_m, max_m + bin_m, bin_m)
     bin_counts = np.zeros(len(bin_edges), dtype=int)
     for mag in magcat:
-        bin = int(round(mag / bin_m - min_m*10))
+        bin = int((mag - min_m) / bin_m)
         bin_counts[bin] += 1
 
     idx_zeros = np.where(bin_counts == 0)[0]
