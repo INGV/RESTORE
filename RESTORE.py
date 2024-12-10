@@ -231,6 +231,7 @@ def filter_catalog(catalog, t_start, serial_times, fault_length_multiplier):
 
     idx_big_shock = np.argmax(catalog[:, MagnColumn])
     mag_big_shock = catalog[idx_big_shock, MagnColumn]
+    print("Mag_big_shock = ", mag_big_shock)
     lat_big_shock = catalog[idx_big_shock, LatColumn]
     lon_big_shock = catalog[idx_big_shock, LonColumn]
 
@@ -241,8 +242,8 @@ def filter_catalog(catalog, t_start, serial_times, fault_length_multiplier):
     ymax, xmax = trainv(lat_big_shock, lon_big_shock, fault_length_multiplier * l_big_shock, fault_length_multiplier * l_big_shock)
     ymin, xmin = trainv(lat_big_shock, lon_big_shock, -fault_length_multiplier * l_big_shock, -fault_length_multiplier * l_big_shock)
     print(f"Subcatalog limits: "
-      f"LAT_MIN = {ymin}, LAT_MAX = {ymax} "
-      f"LON_MIN = {xmin}, LON_MAX = {xmax}")
+      f"LAT_MIN = {round(ymin, 2)}, LAT_MAX = {round(ymax, 2)} "
+      f"LON_MIN = {round(xmin, 2)}, LON_MAX = {round(xmax, 2)}")
 
     mask = (ymin <= catalog[:, LatColumn]) & (catalog[:, LatColumn] <= ymax) & \
            (xmin <= catalog[:, LonColumn]) & (catalog[:, LonColumn] <= xmax)
@@ -309,6 +310,26 @@ def serial_time(input_):
         frac_microseconds = time.microsecond / (secs_per_day * 1000000)
         out2 = mdn.toordinal() + frac_seconds + frac_microseconds
         return out2
+
+
+def dynamic_date_formatter(dates):
+    max_date = max(dates)
+    min_date = min(dates)
+    date_range_days = (max_date - min_date).days
+
+    if date_range_days > 365:  # Over a year
+        fmt = '%b-%Y'
+    elif date_range_days > 30:  # Over a month
+        fmt = '%b-%d'
+    else:  # Shorter intervals
+        fmt = '%b-%d'
+    return mdates.DateFormatter(fmt)
+
+
+def equally_spaced_ticks(dates, num_ticks=6):
+    min_date = min(dates)
+    max_date = max(dates)
+    return mdates.drange(min_date, max_date, (max_date - min_date) / (num_ticks - 1))
 
 
 def timestamp_to_datetime(timestamp):
@@ -539,15 +560,16 @@ def mc_vs_time(magcat, magcat_presequence, mc_ok, st_dev_multiplier, alpha, seri
     datenums1 = mdates.date2num(dates1)
     mc_time_plot = [mc_time[i] for i in idx_t_window_plot]
 
-    fig, ax = plt.subplots(figsize=(8, 6))
-    ax.xaxis_date()
-    fmt = mdates.DateFormatter('%b %Y')
-    ax.xaxis.set_major_formatter(fmt)
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ticks = equally_spaced_ticks(dates1)
+    ax.set_xticks(ticks)
+    ax.xaxis.set_major_formatter(dynamic_date_formatter(dates1))
     ax.plot(datenums1, mc_time_plot, label='Mc(t)', ls='-')
     ax.fill_between(datenums1, upper_lim, mc_time_plot,
-                    where=upper_lim <= mc_time_plot, color='C1', alpha=0.7, label = f"$M_c \geq M^*_c$ + {st_dev_multiplier} $\sigma$")
-    ax.set_xlabel("Time")
-    ax.set_ylabel("Mc")
+                    where=upper_lim <= mc_time_plot, color='C1', alpha=0.7,
+                    label=f"$M_c \geq M^*_c$ + {st_dev_multiplier} $\sigma$")
+    ax.set_xlabel("Time", labelpad=10, fontsize=14) 
+    ax.set_ylabel("Mc", labelpad=10, fontsize=14)  
     ax.legend(loc='upper right')
     plt.savefig('fig/Mc_Time.pdf', format='pdf')
     
@@ -576,17 +598,14 @@ def map_plot(catalog, lon1, lat1, lon2, lat2):
   
     parallels = np.arange(-90, 90, lat_interval)
     meridians = np.arange(-180, 180, lon_interval)
-    m.drawparallels(parallels, labels=[0, 1, 0, 0], fontsize=8, dashes=[1, 5])
-    m.drawmeridians(meridians, labels=[0, 0, 1, 0], fontsize=8, dashes=[1, 5])
+    m.drawparallels(parallels, labels=[1, 1, 1, 1], fontsize=10, dashes=[1, 5])
+    m.drawmeridians(meridians, labels=[1, 1, 1, 1], fontsize=10, dashes=[1, 5])
     m.fillcontinents(color='#F0F0F0', lake_color='#F0F0F0')
-
     x1, y1 = m(lon1, lat1)
     x2, y2 = m(lon2, lat2)
-
     plt.plot(x1, y1, 'o', color='0.3', alpha=.7, markersize=5, markeredgecolor='w')
     plt.plot(x2, y2, 'o', color='steelblue', alpha=.7, markersize=5, markeredgecolor='w')
-    plt.xlabel('Longitude', fontsize=12, labelpad=10)
-    plt.ylabel('Latitude', fontsize=12, labelpad=10)
+
 
     return m
 
@@ -645,7 +664,7 @@ def magnitude_distribution(magcat):
     bin_edges = np.arange(min_m, max_m + bin_m, bin_m)
     bin_counts = np.zeros(len(bin_edges), dtype=int)
     for mag in magcat:
-        bin = int((mag - min_m) / bin_m)
+        bin = int(round(mag / bin_m - min_m*10))
         bin_counts[bin] += 1
 
     idx_zeros = np.where(bin_counts == 0)[0]
@@ -734,16 +753,17 @@ def ghost_element(catalog, t_start, mc_user, b_user, size, step, st_dev_multipli
     
     # Fit hypo depth distribution
     z_data = filtered_catalog[:, DepthColumn]
+    bins = np.linspace(min(z_data), max(z_data), 101) 
     if depth_distribution == 'bimodal':
-        y, x = np.histogram(z_data, bins=100)
+        y, x = np.histogram(z_data, bins=bins)
     else:
-        y, x = np.histogram(z_data, density=1., bins=100)
+        y, x = np.histogram(z_data, density=1., bins=bins)
     x = (x[1:]+x[:-1])/2 # bin centers
 
     distribution_function = select_distribution(depth_distribution)
     params = fit_distribution(distribution_function, x, y, p0=p0)
     print('Fitted parameters = ', params)
-    y, x, _ = plt.hist(z_data, 100)
+    y, x, _ = plt.hist(z_data, bins)
     x_fit = np.linspace(x.min(), x.max(), 500)
     y_fit = distribution_function(x_fit, *params)
 
@@ -879,7 +899,7 @@ def ghost_element(catalog, t_start, mc_user, b_user, size, step, st_dev_multipli
         z_ghost.extend([round(value, 1) for value in samples])
 
         # Generate n=n_to_sample random numbers btw 0 and 1
-        u = np.random.random(n_ghost_hole[i])
+        u = np.random.random(n_to_sample)
 
         for j in range(len(u)):
             if u[j] < cumulative_sum[0]:
@@ -897,21 +917,25 @@ def ghost_element(catalog, t_start, mc_user, b_user, size, step, st_dev_multipli
         lat_ghost.extend(lat_ghost_hole)
 
     # Plot hypo depth distribution
-    fig, ax = plt.subplots()
+
+    data_min = np.min(z_ghost)
+    data_max = np.max(z_ghost)
+    margin = (data_max - data_min) * 0.95  
+    depth_min, depth_max = data_min - margin, data_max + margin
+    
+    fig, ax = plt.subplots(figsize=(8, 6))
     if depth_distribution == 'bimodal':
-        plt.hist(z_data, bins=100, alpha=0.3, color='0.3', label='Hypo depths (filtered) original')
-        plt.plot(x_fit, y_fit, color='red', label=f"Fitted distribution: {depth_distribution}")
-        plt.hist(z_ghost, bins=50, color='steelblue', label='Hypo depths replenished')
-        plt.xlabel('Hypocenter Depth [Km]')
-        plt.legend()
-        plt.savefig('fig/Hypo_Depth_Distribution.pdf', format='pdf')
+        ax.hist(z_data, bins=bins, alpha=0.3, color='0.3', label='Hypo depths (filtered) original')
+        ax.plot(x_fit, y_fit, color='red', label=f"Fitted distribution: {depth_distribution}")
+        ax.hist(z_ghost, bins=bins, color='steelblue', label='Hypo depths replenished')
     else:
-        plt.hist(z_data, bins=100, density=True, alpha=0.3, color='0.3', label='Hypo depths (filtered) original')
-        plt.plot(x_fit, y_fit, color='red', label=f"Fitted distribution: {depth_distribution}")
-        plt.hist(z_ghost, bins=50, density=True, color='steelblue', label='Hypo depths replenished')
-        plt.xlabel('Hypocenter Depth [Km]')
-        plt.legend()
-        plt.savefig('fig/Hypo_Depth_Distribution.pdf', format='pdf')
+        ax.hist(z_data, bins=bins, density=True, alpha=0.3, color='0.3', label='Hypo depths (filtered) original')
+        ax.plot(x_fit, y_fit, color='red', label=f"Fitted distribution: {depth_distribution}")
+        ax.hist(z_ghost, bins=bins, density=True, color='steelblue', label='Hypo depths replenished')
+    ax.set_xlim(depth_min, depth_max)
+    ax.set_xlabel('Hypocenter Depth [km]', labelpad=10, fontsize=14)
+    ax.legend()
+    plt.savefig('fig/Hypo_Depth_Distribution.pdf', format='pdf')
     
     ####    
 
@@ -1036,7 +1060,7 @@ def replenished_catalog(catalog, t_start, mc_user, b_user, size, step, st_dev_mu
     # flag: 0 for original events, 1 for simulated events
     flag = np.array([0] * len(new_times))
     for i in range(len(new_times)):
-        if i <= len(serial_times_compl):
+        if i < len(serial_times_compl):
             flag[i] = 0
         else:
             flag[i] = 1
@@ -1085,19 +1109,14 @@ def replenished_catalog(catalog, t_start, mc_user, b_user, size, step, st_dev_mu
     bin_edges_replenished, log_bin_counts_replenished, log_cum_counts_replenished = \
         magnitude_distribution(replenished_catalog[:, MagnColumn])
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(8, 6))
-    ax1.plot(bin_edges_original, log_bin_counts_original, 'o', color='0.5', markersize=3, label='Non-cumulative counts')
-    ax1.plot(bin_edges_original, log_cum_counts_original, 'ok', markersize=3, label='Cumulative counts')
-    ax1.legend(loc='upper right')
-    ax1.set_xlabel("Magnitude")
-    ax1.set_ylabel("Frequency")
-    ax1.set_title("Original Catalog")
-    ax2.plot(bin_edges_replenished, log_bin_counts_replenished, 'o', color='0.5', markersize=3, label='Non-cumulative counts')
-    ax2.plot(bin_edges_replenished, log_cum_counts_replenished, 'ok', markersize=3, label='Cumulative counts')
-    ax2.legend(loc='upper right')
-    ax2.set_xlabel("Magnitude")
-    ax2.set_ylabel("Frequency")
-    ax2.set_title("Replenished Catalog")
+    fig, ax = plt.subplots(figsize=(8, 10))
+    ax.plot(bin_edges_original, log_bin_counts_original, 'o', color='0.5', markersize=3, label='Non-cumulative counts (Original)', alpha=0.7)
+    ax.plot(bin_edges_original, log_cum_counts_original, '-', color='0.5', label='Cumulative counts (Original)', alpha=0.7)
+    ax.plot(bin_edges_replenished, log_bin_counts_replenished, 'o', color='black', markersize=3, label='Non-cumulative counts (Replenished)', alpha=0.7)
+    ax.plot(bin_edges_replenished, log_cum_counts_replenished, '-', color='black', label='Cumulative counts (Replenished)', alpha=0.7)
+    ax.set_xlabel("Magnitude", labelpad=10, fontsize=14)
+    ax.set_ylabel("Frequency", labelpad=10, fontsize=14)
+    ax.legend(loc='upper right')
     plt.savefig('fig/Magnitude_Frequency_Distribution.pdf', format='pdf')
     
     return replenished_catalog
