@@ -45,7 +45,7 @@ from math import sqrt, log, log10
 import matplotlib.dates as mdates
 from pandas.plotting import register_matplotlib_converters
 from mpl_toolkits.basemap import Basemap
-from scipy.stats import norm, poisson, lognorm, beta
+from scipy.stats import norm, lognorm, beta
 from scipy.optimize import curve_fit
 import os
 import math
@@ -683,9 +683,6 @@ def magnitude_distribution(magcat):
 def fit_normal(x, mu, sigma):
     return norm.pdf(x, mu, sigma)
 
-def fit_poisson(x, mu):
-    return poisson.pmf(x, mu)
-
 def fit_lognormal(x, mu, sigma):
     return lognorm.pdf(x, sigma, scale=np.exp(mu))
 
@@ -707,9 +704,6 @@ def select_distribution(user_input):
     elif user_input == 'normal':
         print("Parameters to fit: 'mu', 'sigma'")
         return fit_normal
-    elif user_input == 'poisson':
-        print("Parameters to fit: 'mu'")
-        return fit_poisson
     elif user_input == 'lognormal':
         print("Parameters to fit: 'mu', 'sigma'")
         return fit_lognormal
