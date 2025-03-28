@@ -37,5 +37,5 @@ p0: 9,0.1,3500,13,0.3,1000
 
 - depth_distribution: [scipy.optimize.curve_fit] distribution to fit to hypocenter depths, available options are: normal, poisson, lognormal, beta, bimodal.
 
-- p0: [scipy.optimize.curve_fit] initial guess for the parameters of the hypocenter depth distribution: 'mu', 'sigma' (normal), 'mu' (poisson), 'mu', 'sigma' (lognormal), 'a', 'b' (beta), 'mu1', 'sigma1', 'A1', 'mu2', 'sigma2', 'A2' (bimodal).
+- p0: [scipy.optimize.curve_fit] initial guess for the parameters of the hypocenter depth distribution: 'mu', 'sigma' (normal), 'mu', 'sigma' (lognormal), 'a', 'b' (beta), 'mu1', 'sigma1', 'A1', 'mu2', 'sigma2', 'A2' (bimodal).
 
