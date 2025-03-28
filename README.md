@@ -22,8 +22,8 @@ Set the input parameters in the `input_file.txt` file:
 - b: b-value of the Gutenberg-Richter law (alternatively, it can be estimated with the function provided in RESTORE).
 - alpha: significance level for the Lilliefors test.
 - mc: reference value for the magnitude of completeness, if set by the user (by default, it is estimated with the function provided in RESTORE).
-- depth_distribution: [`scipy.optimize.curve_fit`] distribution to fit to hypocenter depths, available options are: normal, poisson, lognormal, beta, bimodal.
-- p0: [`scipy.optimize.curve_fit`] initial guess for the parameters of the hypocenter depth distribution: 'mu', 'sigma' (normal), 'mu' (poisson), 'mu', 'sigma' (lognormal), 'a', 'b' (beta), 'mu1', 'sigma1', 'A1', 'mu2', 'sigma2', 'A2' (bimodal).
+- depth_distribution: [`scipy.optimize.curve_fit`] distribution to fit to hypocenter depths, available options are: normal, lognormal, beta, bimodal.
+- p0: [`scipy.optimize.curve_fit`] initial guess for the parameters of the hypocenter depth distribution: 'mu', 'sigma' (normal), 'mu', 'sigma' (lognormal), 'a', 'b' (beta), 'mu1', 'sigma1', 'A1', 'mu2', 'sigma2', 'A2' (bimodal).
 
 
 Run `RESTORE` using the following command:
