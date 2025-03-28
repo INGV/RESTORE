@@ -31,10 +31,9 @@ if __name__ == '__main__':
     11. mc [optional]: reference value for the magnitude of completeness, if set by the user (by default, 
         it is estimated with the function provided in RESTORE)
     12. depth_distribution: [scipy.optimize.curve_fit] distribution to fit to hypocenter depths 
-        --> normal, poisson, lognormal, beta, bimodal
+        --> normal, lognormal, beta, bimodal
     13. p0: [scipy.optimize.curve_fit] initial guess for the parameters of the hypo depth distribution:
         'mu', 'sigma' (normal), 
-        'mu' (poisson), 
         'mu', 'sigma' (lognormal), 
         'a', 'b' (beta), 
         'mu1', 'sigma1', 'A1', 'mu2', 'sigma2', 'A2' [bimodal]
