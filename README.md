@@ -1,81 +1,144 @@
+# RESTORE
+
+`RESTORE` is a Python tool tackling the short-term aftershock incompleteness issue (STAI). It is based on a stochastic gap-filling procedure which reconstructs the missing events in the space-time-magnitude domain based on empirical earthquake properties. The subsets of the catalog affected by the STAI issue are automatically detected.
 
 ![alt text](https://github.com/angystallone/Seismology_Stuff/blob/main/figures/RESTORE_logo.png?raw=true)
 
+## Installation
 
-<h2>About</h2>
-
-`RESTORE` is a Python tool tackling the short-term aftershock incompleteness issue (STAI).
-It is based on a stochastic gap-filling procedure which reconstructs the missing events in the space-time-magnitude domain based on empirical earthquake properties. 
-The subsets of the catalog affected by the STAI issue are automatically detected.
-
-<h2>To run</h2>
-
-Set the input parameters in the `input_file.txt` file:
-
-- size: moving-window size (in number of events per window) --> 1000 by default (Mignan and Woessner, 2012).
-- step: moving-window step (in number of events per step) --> 250 by default (Mignan and Woessner, 2012).
-- st_dev_multiplier: multiplies the Mc standard deviation (Mc Sigma), controls the confidence level for STAI gaps identification; STAI gaps are windows where mc >= mc_ok + n*sigma, where n = st_dev_multiplier; increasing the value of st_dev_multiplier results in a more conservative approach in detecting temporary deviations of Mc.
-- Sigma: smoothing distance of the Gaussian kernel, controls the spread of the smoothing; smaller values will result in sharper and more localized smoothing.
-- sbin: bin in the latitude and longitude direction (degrees), controls the grid resolution
-- fault_length_multiplier: multiplies the fault length rupture, controls the areal extent of the subcatalog where inferences about Mc trend with time are made; smaller values will result in higher resolution of STAI gaps detection, as local seismicity is less diluted.
-- t_end_quiet: ending time of the seismically quiescent period.
-- b: b-value of the Gutenberg-Richter law (alternatively, it can be estimated with the function provided in RESTORE).
-- alpha: significance level for the Lilliefors test.
-- mc: reference value for the magnitude of completeness, if set by the user (by default, it is estimated with the function provided in RESTORE).
-- depth_distribution: [`scipy.optimize.curve_fit`] distribution to fit to hypocenter depths, available options are: normal, lognormal, beta, bimodal.
-- p0: [`scipy.optimize.curve_fit`] initial guess for the parameters of the hypocenter depth distribution: 'mu', 'sigma' (normal), 'mu', 'sigma' (lognormal), 'a', 'b' (beta), 'mu1', 'sigma1', 'A1', 'mu2', 'sigma2', 'A2' (bimodal).
-
-
-Run `RESTORE` using the following command:
+Clone the repository:
 
 ```bash
-python Run_RESTORE.py
+git clone https://github.com/INGV/RESTORE.git
+cd RESTORE
 ```
 
-<h2>Synthetic_Test [v 2.0.0 only]</h2>
-
-`Run_Synthetic_Test.py` --> runs the synthetic test (uses `ETAS_incomplete.txt` as input dataset)
-
-`ETAS_complete.txt` --> synthetic dataset (before STAI modeling)
-
-`ETAS_incomplete.txt` --> the synthetic dataset (after STAI modeling)
-
-Compare the replenished catalog with `ETAS_complete.txt`, to check how the missing events are reconstructed by RESTORE
-
-<h2>Required external modules</h2>
-
-`mc_lilliefors` (download it <a href="https://gitlab.com/marcus.herrmann/mc-lilliefors">here</a>)
-
-<h2>How to cite</h2>
-
-If you use `RESTORE` in your research, please cite using the following citation:
+Create and activate a virtual environment:
 
 ```bash
-@software{Stallone_RESTORE,
-author = {Stallone, Angela and Falcone, Giuseppe},
-title = {{RESTORE}},
-url = {https://github.com/INGV/RESTORE}
-}
+python3 -m venv .venv
+source .venv/bin/activate    # Windows: .venv\Scripts\activate
 ```
 
-**ZENODO**
+Install RESTORE:
 
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.10809571.svg)](https://doi.org/10.5281/zenodo.10809571)
+```bash
+pip install .
+```
 
-**Linked article**
+Run RESTORE example:
 
-Stallone, A., & Falcone, G. (2021). *Missing earthquake data reconstruction in the space‐time‐magnitude domain*. Earth and Space Science, 8(8), e2020EA001481.
-<a href="https://doi.org/10.1029/2020EA001481">https://doi.org/10.1029/2020EA001481</a>
+```bash
+restore --config example/amatrice/input_file.txt
+```
 
-For any comment, question or suggestion write to:
-<angela.stallone@ingv.it>
+Print the installed RESTORE version
+```bash
+restore --version
+```
+
+To generate multiple RESTORE realizations, specify the desired values of `sizes`, `steps`, and `seeds` in the input file. 
+RESTORE will run all combinations of these values.
+
+## Input Catalog Format [ZMAP] and magnitude binning
+
+Input catalogs must follow the ZMAP format, with columns following this order:
+
+1. longitude
+2. latitude
+3. year
+4. month
+5. day
+6. magnitude
+7. hypocentral depth in km
+8. hour
+9. minute
+10. second
+
+Magnitudes must already be binned at `ΔM = 0.1`.
+
+## Outputs
+
+Different seeds return different replenished catalogs. 
+For a given window size, window step and seed combination, the output files are written in `outputs/<example>/realizations/size_<size>_step_<step>/seed_<seed>/`.
+
+`Replenished_catalog.txt` contains the ten input columns plus:
+
+- `flag = 0`: observed event
+- `flag = 1`: reconstructed event
+
+The runner writes:
+
+- `realization_metrics.csv`: contains one row for each `(size, step, seed)` realization and summarizes the representative metrics across all realizations
+- `representative_realization.txt`: the realization that is closest to the central behavior of the tested ensemble (see the note below)
+- for each realization: `settings.txt` reports the input parameters for that run
+- for each realization: `metadata.json` with code/environment/file provenance
+
+**NOTE**: Each successful `(size, step, seed)` combination represents one RESTORE realization. 
+RESTORE defines the central ensemble behavior as the median value of each representative metric across all successful realizations. 
+It then calculates the normalized distance of each realization from the center and selects the realization with the smallest distance.
+Distances are normalized by the interquartile range of each representative metric across the ensemble so that metrics with different numerical scales can be compared. 
+The final distance is a weighted mean: number of reconstructed events, magnitude distribution, spatial distribution, depth distribution, and STAI characteristics are given equal total weight.
+
+The representative metrics are:
+
+- number of reconstructed events
+- median reconstructed magnitude
+- median reconstructed latitude and longitude
+- median reconstructed hypocentral depth
+- total STAI duration
+- number of STAI gaps
+
+## How RESTORE works
+
+For each realization, RESTORE performs the following steps:
+
+1. **Read and validate the input catalog.**
+   Note: the catalog must be in ZMAP format and magnitudes must already be discretized at `ΔM = 0.1`.
+
+2. **Identify the largest earthquake.**
+   The event with the largest magnitude is identified as responsible for the STAI.
+
+3. **Define the STAI region.**
+   RESTORE estimates the rupture length of the largest event and constructs a rectangular region around it. The size of this region is controlled by `fault_length_multiplier` (provided by the user) and represents the area affected by the STAI.
+
+4. **Create the spatially filtered catalog.**
+   Only earthquakes located inside the STAI region are used to estimate the temporal variation of magnitude completeness, detect STAI gaps, and reconstruct missing events. The file `STAI-Filtered_Catalog.txt` contains this subset. 
+   Note: this implies that the provided input catalog can cover an arbitrary area. RESTORE automatically extracts the meaningful subset based on `fault_length_multiplier`.
+
+5. **Estimate the reference magnitude of completeness.**
+   RESTORE uses earthquakes occurring before `t_end_quiet` (i.e., those occurring during the 'seismic quiescent period'), inside the STAI region, to estimate the reference completeness magnitude `Mc*`, unless the user supplies their own value.
+
+6. **Estimate `Mc` through time.**
+   The filtered catalog is analyzed with a moving window approach. RESTORE estimates `Mc` for each window using the Lilliefors test.
+   Note: starting from v.3.0.0, RESTORE implements the Lilliefors test with truncated-exponential dithering, as proposed by [Stallone and Spassiani (2026)](https://doi.org/10.26443/seismica.v5i1.2257).
+
+7. **Detect STAI gaps.**
+   A time interval is classified as affected by STAI when the moving-window `Mc` exceeds the reference value by the selected confidence threshold. The latter is a (user-defined) multiple of the standard deviation estimated via bootstrap: the lower the multiple, the more RESTORE is sensitive to transient variations in `Mc`.
+
+8. **Estimate missing magnitudes.**
+   For each STAI step, RESTORE estimates the expected number of earthquakes and related magnitudes using the Gutenberg-Richter (GR) relation. If the Gutenberg-Richter b-value is None, RESTORE uses the default value b = 1.0.
+
+9. **Simulate missing-event properties.**
+   Occurrence times, epicentral coordinates, and hypocentral depths are generated stochastically from the observed properties of the filtered catalog.
+
+10. **Build the replenished catalog.**
+    The output catalog contains:
+    * original events with magnitude greater than or equal to the reference `Mc`;
+    * reconstructed events generated inside the STAI region.
+
+    The final column identifies event origin:
+    * `flag = 0`: original event;
+    * `flag = 1`: reconstructed event.
+
+11. **Generate the requested ensemble.**
+    RESTORE runs for all requested combinations of `size`, `step`, and `seed`. Each `(size, step, seed)` combination is treated as one stochastic realization.
+
+12. **Select a representative realization.**
+    By inspecting all successful realizations, RESTORE calculates the median value of each representative metric and defines the central ensemble behavior. Each realization is compared with this center using a normalized distance. The realization with the smallest distance is reported as representative.
 
 
-<h2>Acknowledgements</h2>
+## Notes for the user
 
-This project has been founded by the Seismic Hazard Center
-(Centro di Pericolosità Sismica, CPS, at the Istituto Nazionale di Geofisica e Vulcanologia, INGV)
-
-
-
-
+RESTORE produces plausible stochastic realizations of missing seismicity, not reconstructions of the events that actually occurred. Users are therefore encouraged to generate an ensemble of realizations that explores both the stochastic variability and the variability associated with the choice of moving window size and step.
+RESTORE uses the distance from the central ensemble behavior as criterion for identifying a representative realization, but users are free to adopt alternative criteria.

@@ -1,0 +1,24 @@
+cff-version: 1.2.0
+message: "If you use RESTORE in your research, please cite the software and the related article."
+title: "RESTORE"
+version: "3.0.0"
+
+authors:
+  - family-names: "Stallone"
+    given-names: "Angela"
+  - family-names: "Falcone"
+    given-names: "Giuseppe"
+
+repository-code: "https://github.com/INGV/RESTORE"
+
+preferred-citation:
+  type: article
+  authors:
+    - family-names: "Stallone"
+      given-names: "Angela"
+    - family-names: "Falcone"
+      given-names: "Giuseppe"
+  title: "Missing earthquake data reconstruction in the space-time-magnitude domain"
+  journal: "Earth and Space Science"
+  year: 2021
+  doi: "10.1029/2020EA001481"

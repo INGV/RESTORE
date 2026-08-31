@@ -1,18 +1,20 @@
 """
 
 RESTORE: REal catalogs STOchastic REplenishment
-Written by Angela Stallone with help from Giuseppe Falcone
+
+TO CITE:
+"Stallone, A., & Falcone, G. (2021). Missing earthquake data reconstruction in the space-time-magnitude domain. Earth and Space Science, 8(8), e2020EA001481."
+https://doi.org/10.1029/2020EA001481
+
 For any comment, question or suggestion write to:
 angela.stallone@ingv.it
 
 This project has been founded by the Seismic Hazard Center
 (Centro di Pericolosità Sismica, CPS, at the Istituto Nazionale di Geofisica e Vulcanologia, INGV)
 
-|---------------------------|
-
-Latest revision: Jan, 2024
-
-|--------------------------------------------------------------------------|
+|--------------------------|
+ Latest revision: Aug, 2026
+|--------------------------|
 
 RESTORE (REal catalogs STOchastic REplenishment) implements a stochastic gap-filling method
 to quickly simulate time, hypocenter coordinates and magnitude of earthquakes that have not
@@ -31,17 +33,9 @@ Carlo techniques to sample from empirical distribution functions.
 
 import csv
 import numpy as np
-from urllib.request import urlopen
 import json
-import dateparser
-import csv
-from numpy import flipud
-import xmltodict
 import datetime
-import pandas as pd
-import sys
 import matplotlib.pyplot as plt
-from math import sqrt, log, log10
 import matplotlib.dates as mdates
 from pandas.plotting import register_matplotlib_converters
 from mpl_toolkits.basemap import Basemap
@@ -49,11 +43,12 @@ from scipy.stats import norm, lognorm, beta
 from scipy.optimize import curve_fit
 import os
 import math
-import decimal
-decimal.getcontext().prec = 2
+import mc_lilliefors
+from matplotlib.patches import Rectangle
+
+__version__ = "3.0.0"
 
 # Column numbers in the catalog
-
 LonColumn = 0
 LatColumn = 1
 YearColumn = 2
@@ -66,8 +61,28 @@ MinuteColumn = 8
 SecondColumn = 9
 
 
+class NoSTAIGapsFound(RuntimeError):
+    pass
+
+
+def _force_rng(rng=None):
+    if rng is None:
+        return np.random.default_rng()
+    return rng
+
+
+def _write_run_summary(summary, filename="RESTORE_run_summary.json"):
+    with open(filename, "w", encoding="utf-8") as output:
+        json.dump(summary, output, indent=2)
+
+
 def read_catalog_zmap(name_catalog, delimiter):
-    
+    """
+    Read a 10-column ZMAP catalog with delimiter specified by the user.
+
+    NOTE: A magnitude grid of 0.1 is required.
+    """
+
     lon = []
     lat = []
     year = []
@@ -86,7 +101,7 @@ def read_catalog_zmap(name_catalog, delimiter):
             year.append(int(float(row[2])))
             month.append(int(float(row[3])))
             day.append(int(float(row[4])))
-            mag.append(round(float(row[5]), 1))
+            mag.append(float(row[5]))
             depth.append(float(row[6]))
             hour.append(int(float(row[7])))
             minute.append(int(float(row[8])))
@@ -107,143 +122,131 @@ def read_catalog_zmap(name_catalog, delimiter):
     return catalog
 
 
-def acquisition_data(depthm, mmin, xmin, xmax, ymin, ymax, time_start, time_end):
+# A magnitude binning of 0.1 is required. 
+# Changing the magnitude binning of the original catalog to 0.1 is up to the user.
+MAG_BIN = 0.1
+MAG_TOL = 1e-8
+def validate_magnitude_bins(catalog):
+    """
+    Validate magnitude binning in the catalog.
+    """
 
-    lon = []
-    lat = []
-    year = []
-    month = []
-    day = []
-    mag = []
-    depth = []
-    hour = []
-    minute = []
-    sec = []
-    type_mag = []
-    url = "http://webservices.rm.ingv.it/fdsnws/event/1/query?starttime=" + str(time_start) + "&endtime=" + str(
-        time_end) + "&minlat=" + str(ymin) + "&maxlat=" + str(ymax) + "&minlon=" + str(xmin) + "&maxlon=" + str(
-        xmax) + "&maxdepth=" + str(depthm * 1000) + "&minmag=" + str(mmin) + "&format=geojson"
-    print(url)
-    html = urlopen(url).read()
-    data = json.loads(html)
-    field_list = data['features']
-    i = 0
-    for field in field_list:
-        mytime = data['features'][i]['properties']['time']
-        time = dateparser.parse(mytime)
-        year.append(int(time.year))
-        month.append(int(time.month))
-        day.append(int(time.day))
-        hour.append(int(time.hour))
-        minute.append(int(time.minute))
-        second = float(time.second) + (float(time.microsecond) / 1000000)
-        sec.append(round(second, 2))
-        lon.append(float(data['features'][i]['geometry']['coordinates'][0]))
-        lat.append(float(data['features'][i]['geometry']['coordinates'][1]))
-        depth.append(float(data['features'][i]['geometry']['coordinates'][2]))
-        mag.append(data['features'][i]['properties']['mag'])
-        type_mag.append(data['features'][i]['properties']['magType'])
-        i = i + 1
-    nrows2 = len(lon)
-    ncols = 11
-    catalog = np.ndarray((nrows2, ncols), dtype=object)
-    catalog[:, LonColumn] = flipud(lon[:])
-    catalog[:, LatColumn] = flipud(lat[:])
-    catalog[:, YearColumn] = flipud(year[:])
-    catalog[:, MonthColumn] = flipud(month[:])
-    catalog[:, DayColumn] = flipud(day[:])
-    catalog[:, MagnColumn] = flipud(mag[:])
-    catalog[:, DepthColumn] = flipud(depth[:])
-    catalog[:, HourColumn] = flipud(hour[:])
-    catalog[:, MinuteColumn] = flipud(minute[:])
-    catalog[:, SecondColumn] = flipud(sec[:])
-    rows = zip(flipud(lon), flipud(lat), flipud(year), flipud(month), flipud(day), flipud(mag), flipud(depth),
-               flipud(hour), flipud(minute), flipud(sec))
-    with open('Zmap_catalog', 'w', newline='') as f:
-        writer = csv.writer(f, delimiter=' ', skipinitialspace=True, quoting=csv.QUOTE_NONE)
-        for x in rows:
-            writer.writerow(x)
-    return catalog
+    magnitudes = np.asarray(catalog[:, MagnColumn], dtype=float)
+    if magnitudes.size == 0:
+        raise ValueError("The catalog contains no events.")
+    if not np.all(np.isfinite(magnitudes)):
+        invalid = magnitudes[~np.isfinite(magnitudes)][:10]
+        raise ValueError(
+            "Catalog magnitudes must be finite. "
+            f"Invalid examples: {invalid.tolist()}"
+        )
+
+    scaled = magnitudes / MAG_BIN
+    invalid_grid = ~np.isclose(scaled, np.rint(scaled), atol=MAG_TOL, rtol=0)
+    if np.any(invalid_grid):
+        examples = magnitudes[invalid_grid][:10]
+        raise ValueError(
+            "RESTORE requires magnitudes already discretized at ΔM = 0.1. It does not re-bin magnitudes."
+            f"Invalid examples: {examples.tolist()}"
+        )
 
 
-def acquisition_xml(depth_m, mmin, xmin, xmax, ymin, ymax, time_start, time_end):
+def validate_magnitude_value(value, name):
+    """
+    Validate magnitude binning.
+    """
 
-    lon = []
-    lat = []
-    year = []
-    month = []
-    day = []
-    mag = []
-    depth = []
-    hour = []
-    minute = []
-    sec = []
-    type_mag = []
-    url = "http://webservices.rm.ingv.it/fdsnws/event/1/query?starttime=" + str(time_start) + "&endtime=" + str(
-        time_end) + "&minlat=" + str(ymin) + "&maxlat=" + str(ymax) + "&minlon=" + str(xmin) + "&maxlon=" + str(
-        xmax) + "&maxdepth=" + str(depth_m * 1000) + "&minmag=" + str(mmin) + "&includeallmagnitudes"
-    print(url)
-    html = urlopen(url).read()
-    doc = xmltodict.parse(html)
-    root = doc["q:quakeml"]
-    eventparameters = root["eventParameters"]
-    i = 0
-    for data in eventparameters["event"]:
-        mytime = data['origin']['time']['value']
-        time = dateparser.parse(mytime)
-        year.append(int(time.year))
-        month.append(int(time.month))
-        day.append(int(time.day))
-        hour.append(int(time.hour))
-        minute.append(int(time.minute))
-        second = float(time.second) + (float(time.microsecond) / 1000000)
-        sec.append(round(second, 2))
-        lon.append(float(data['origin']['longitude']['value']))
-        lat.append(float(data['origin']['latitude']['value']))
-        depth.append(float(data['origin']['depth']['value']) / 1000)
-        mag.append(data['magnitude']['mag']['value'])
-        type_mag.append(data['magnitude']['type'])
-        i = i + 1
-    nrows2 = len(lon)
-    ncols = 11
-    catalog = np.ndarray((nrows2, ncols), dtype=object)
-    catalog[:, LonColumn] = flipud(lon[:])
-    catalog[:, LatColumn] = flipud(lat[:])
-    catalog[:, YearColumn] = flipud(year[:])
-    catalog[:, MonthColumn] = flipud(month[:])
-    catalog[:, DayColumn] = flipud(day[:])
-    catalog[:, MagnColumn] = flipud(mag[:])
-    catalog[:, DepthColumn] = flipud(depth[:])
-    catalog[:, HourColumn] = flipud(hour[:])
-    catalog[:, MinuteColumn] = flipud(minute[:])
-    catalog[:, SecondColumn] = flipud(sec[:])
-    rows = zip(flipud(lon), flipud(lat), flipud(year), flipud(month), flipud(day), flipud(mag), flipud(depth),
-               flipud(hour), flipud(minute), flipud(sec))
-    with open('Zmap_catalog', 'w', newline='') as f:
-        writer = csv.writer(f, delimiter=' ', skipinitialspace=True, quoting=csv.QUOTE_NONE)
-        for x in rows:
-            writer.writerow(x)
-    return catalog
+    if value is None:
+        return
+    value = float(value)
+    if not np.isclose(value / MAG_BIN, np.rint(value / MAG_BIN), atol=MAG_TOL, rtol=0):
+        raise ValueError(
+            f"{name} must align with the default magnitude binning (ΔM = 0.1); received {value}."
+        )
+    
+
+def plot_stai_region(catalog, lon_min, lon_max, lat_min, lat_max, mainshock_lon, mainshock_lat):
+    """
+    Plot the area covered by the input catalog along with the STAI rectangular area,
+    i.e., the smaller region used for Mc(t), STAI-gap detection, and reconstruction.
+    """
+
+    lon = np.asarray(catalog[:, LonColumn], dtype=float)
+    lat = np.asarray(catalog[:, LatColumn], dtype=float)
+
+    llcrnrlon = lon.min()
+    urcrnrlon = lon.max()
+    llcrnrlat = lat.min()
+    urcrnrlat = lat.max()
+
+    fig, ax = plt.subplots(figsize=(8, 7))
+    m = Basemap(projection="merc", resolution="i", llcrnrlon=llcrnrlon, llcrnrlat=llcrnrlat, urcrnrlon=urcrnrlon, urcrnrlat=urcrnrlat, ax=ax)
+    try:
+        m.drawcoastlines(linewidth=0.5)
+    except Exception:
+        pass
+    m.drawcountries()
+    m.drawmapboundary()
+    lon_range = urcrnrlon - llcrnrlon
+    lat_range = urcrnrlat - llcrnrlat
+    lon_interval = max(round(0.2 * lon_range, 2), 0.01)
+    lat_interval = max(round(0.2 * lat_range, 2), 0.01)
+
+    m.drawparallels(np.arange(-90, 90, lat_interval), labels=[1, 0, 0, 0], fontsize=10, dashes=[1, 5] )
+    m.drawmeridians(np.arange(-180, 180, lon_interval), labels=[0, 0, 0, 1], fontsize=10, dashes=[1, 5])
+    m.fillcontinents(color="#F0F0F0", lake_color="#F0F0F0")
+
+    # Input catalog
+    x, y = m(lon, lat)
+    ax.plot(x, y, "o", color="0.4", markersize=3, alpha=0.5, label="Input catalog")
+
+    # STAI rectangle 
+    x1, y1 = m(lon_min, lat_min)
+    x2, y2 = m(lon_max, lat_max)
+
+    rectangle = Rectangle((x1, y1), x2 - x1, y2 - y1, fill=False, edgecolor="tab:blue", linewidth=2, label="STAI region")
+    ax.add_patch(rectangle)
+
+    # Largest earthquake
+    x_main, y_main = m(mainshock_lon, mainshock_lat)
+    ax.plot(x_main, y_main, marker="*", color="red", markersize=14, markeredgecolor="k", markeredgewidth=0.7, linestyle="None", label="Largest earthquake")
+    ax.legend(loc="best")
+    plt.savefig("fig/STAI_Region.pdf", format="pdf")
+    plt.close()
 
 
 def filter_catalog(catalog, t_start, serial_times, fault_length_multiplier):
-    # Filter catalog to a meaningful region surrounding the large shock
+    """
+    Extract the spatial region used for STAI analysis.
+
+    The largest event defines the center. Its estimated rupture length, multiplied by ``fault_length_multiplier``, defines the rectangular bounds.
+    The initial catalog is filtered to extract the subset of events occurred in the STAI region.
+    The returned pre-sequence magnitudes are inside the same region and occur before ``t_start``.
+    """
 
     idx_big_shock = np.argmax(catalog[:, MagnColumn])
     mag_big_shock = catalog[idx_big_shock, MagnColumn]
-    print("Mag_big_shock = ", mag_big_shock)
+    print(f"Largest event magnitude: {mag_big_shock}")
     lat_big_shock = catalog[idx_big_shock, LatColumn]
     lon_big_shock = catalog[idx_big_shock, LonColumn]
 
+    # From Mw to seismic moment
     moment_big_shock = 10 ** (3 / 2 * (mag_big_shock + 10.7)) * 10 ** (-7)
-    l_big_shock = 10 ** (-5.20 + 0.35 * math.log10(moment_big_shock))  # rupture length (from Mai and Beroza (2000))
+    # Rupture length estiamtion (from Mai and Beroza, 2000)
+    l_big_shock = 10 ** (-5.20 + 0.35 * math.log10(moment_big_shock))  
 
     # Max dist in lon and lat direction is fault_length_multiplier * rupture length 
-    ymax, xmax = trainv(lat_big_shock, lon_big_shock, fault_length_multiplier * l_big_shock, fault_length_multiplier * l_big_shock)
-    ymin, xmin = trainv(lat_big_shock, lon_big_shock, -fault_length_multiplier * l_big_shock, -fault_length_multiplier * l_big_shock)
-    print(f"Subcatalog limits: "
-      f"LAT_MIN = {round(ymin, 2)}, LAT_MAX = {round(ymax, 2)} "
-      f"LON_MIN = {round(xmin, 2)}, LON_MAX = {round(xmax, 2)}")
+    ymax, xmax = _trainv(lat_big_shock, lon_big_shock, fault_length_multiplier * l_big_shock, fault_length_multiplier * l_big_shock)
+    ymin, xmin = _trainv(lat_big_shock, lon_big_shock, -fault_length_multiplier * l_big_shock, -fault_length_multiplier * l_big_shock)
+
+    lat_min = round(ymin, 2)
+    lat_max = round(ymax, 2)
+    lon_min = round(xmin, 2)
+    lon_max = round(xmax, 2)
+    print(
+        "STAI region bounds: "
+        f"lat {lat_min} to {lat_max}, lon {lon_min} to {lon_max}"
+    )
 
     mask = (ymin <= catalog[:, LatColumn]) & (catalog[:, LatColumn] <= ymax) & \
            (xmin <= catalog[:, LonColumn]) & (catalog[:, LonColumn] <= xmax)
@@ -256,13 +259,18 @@ def filter_catalog(catalog, t_start, serial_times, fault_length_multiplier):
     
     magcat_presequence = catalog[mask_preseq, MagnColumn]
 
+    # Plot extracted STAI region
+    plot_stai_region(catalog, xmin, xmax, ymin, ymax, lon_big_shock, lat_big_shock)
+
     return filtered_catalog, mask, magcat_presequence
 
 
-def write_filterd_catalog(filtered_catalog):
-    # Write filtered catalog to file
+def write_filtered_catalog(filtered_catalog):
+    """ 
+    Write the STAI-filtered catalog to file.
+    """
 
-    with open('Filtered_Catalog.txt', 'w') as txtfile:
+    with open('STAI-Filtered_Catalog.txt', 'w') as txtfile:
         for i, _ in enumerate(filtered_catalog):
             lon = filtered_catalog[i, LonColumn]
             lat = filtered_catalog[i, LatColumn]
@@ -278,8 +286,11 @@ def write_filterd_catalog(filtered_catalog):
 
 
 def serial_time(input_):
-    # Converts the input date (string format) or date vectors (year, month, day, hour, minute, second) into timestamps
-    # Origin time: Year 0, Month 0, Day 0 (same as Matlab)
+    """
+    Convert the input date (string format) or date vectors (year, month, day, hour, minute, second) into timestamps.
+
+    Origin time: Year 0, Month 0, Day 0 (same as Matlab)
+    """
 
     secs_per_day = 24.0 * 60.0 * 60.0
 
@@ -312,7 +323,7 @@ def serial_time(input_):
         return out2
 
 
-def dynamic_date_formatter(dates):
+def _dynamic_date_formatter(dates):
     max_date = max(dates)
     min_date = min(dates)
     date_range_days = (max_date - min_date).days
@@ -326,14 +337,16 @@ def dynamic_date_formatter(dates):
     return mdates.DateFormatter(fmt)
 
 
-def equally_spaced_ticks(dates, num_ticks=6):
+def _equally_spaced_ticks(dates, num_ticks=6):
     min_date = min(dates)
     max_date = max(dates)
     return mdates.drange(min_date, max_date, (max_date - min_date) / (num_ticks - 1))
 
 
 def timestamp_to_datetime(timestamp):
-    # Converts custom timestamps to datetime objects
+    """
+    Convert custom timestamps to datetime objects
+    """
 
     days = timestamp % 1
     hours = days % 1 * 24
@@ -347,154 +360,83 @@ def timestamp_to_datetime(timestamp):
     return date_out
 
 
-def lilliefors(magcat, alpha):
-    # Implements the Python routine "mc_lilliefors" 
-    # Source: Herrmann, M. and W. Marzocchi (2021). Inconsistencies and Lurking Pitfalls 
-    # in the Magnitude–Frequency Distribution of High-Resolution Earthquake Catalogs. 
-    # Seismological Research Letters 92(2A). doi: 10.1785/0220200337
-    # Gitlab: https://gitlab.com/marcus.herrmann/mc-lilliefors
+# Minimun number of events for Mc estimation with the Lilliefors test
+MIN_EVENTS = 50
+def lilliefors(magcat, alpha, delta_m=MAG_BIN, b=1.0, n_dithers=50, min_events=MIN_EVENTS, rng=None):
+    """
+    Estimate Mc with the Lilliefors test using truncated-exponential dithering.
 
-    try:
-        import mc_lilliefors
-    except ImportError:
-        print("Ops! Module mc_lilliefors is missing! Download it here: https://gitlab.com/marcus.herrmann/mc-lilliefors")
-        sys.exit(1)
+    The truncated-exponential dithering used here follows:
+    "Stallone, A., & Spassiani, I. (2026). Correcting exponentiality test for binned earthquake magnitudes. Seismica, 5(1)."
+    https://doi.org/10.26443/seismica.v5i1.2257
+    """
 
-    mag_series = pd.Series(magcat, dtype='float64')
-
-    lill = mc_lilliefors.McLilliefors(
-        mag_series,
-        alpha
+    magcat = np.asarray(magcat, dtype=float)
+    mc, _ = mc_lilliefors.estimate_mc_lilliefors(
+        magcat,
+        delta_m=delta_m,
+        b_value=b,
+        alpha=alpha,
+        n_dithers=n_dithers,
+        min_events=min_events,
+        rng=rng,
     )
-
-    lill.calc_testdistr_mcutoff(
-        n_repeats=50  # number of iterations for the random noise
-       )
-
-    mc = lill.estimate_Mc_expon_test()
+    if mc is None:
+        raise ValueError("The Lilliefors estimator could not determine Mc.")
+    validate_magnitude_value(mc, "Estimated Mc")
 
     return mc
 
 
-def b_value_zmap(magcat):
-    # Calculate the b_value, tha a_value and the completeness magnitude using the ZMAP approach
+def bootstrap_mc(mag_data, alpha, b, rng=None):
+    """
+    Estimate Mc uncertainty with bootstrap.
 
-    bin_m = 0.1
-    magmin = 0.0
-    magmax = max(magcat)
-    x = np.arange(magmin, magmax + bin_m, bin_m)
-    nevents = len(magcat)
-    y = np.arange(0, nevents)
-    rad_mag_cutoff = np.zeros(shape=(len(x), nevents))
-    ntotmag = np.zeros(shape=(len(x)))
-    difference = np.zeros(shape=(len(x)))
-    sumup = np.zeros(shape=(len(x)))
-    rad_mag_cutoff.fill(np.nan)
-    idx = -1
-    for i in x:
-        idx = idx + 1
-        for j in y:
-            if magcat[j] >= i:
-                ntotmag[idx] = ntotmag[idx] + 1
-                rad_mag_cutoff[idx][j] = magcat[j]
-    mean_mag_cutoff = np.nanmean(rad_mag_cutoff, axis=1)
-    idx = -1
-    for i in x:
-        idx = idx + 1
-        for j in y:
-            rad_mag_cutoff[idx][j] = (rad_mag_cutoff[idx][j] - mean_mag_cutoff[idx]) ** 2
-    sum_mag_cutoff = np.nansum(rad_mag_cutoff, axis=1)
-    bin_centers = 0.5 * (x[1:] + x[:-1])
-    no_cumulative, av, b = plt.hist(magcat, bin_centers)
-    avm = np.delete(av, [len(av) - 1])
-    # B_value from Marzocchi and Sandri (2003)
-    b_cutoff = 1 / (log(10) * ((mean_mag_cutoff) - (x - bin_m / 2)))
-    deltab_value = 2.3 * (b_cutoff ** 2) * np.sqrt(sum_mag_cutoff / (ntotmag * (ntotmag - 1)))
-    d_m1 = 0.5
-    dm = 0.1
-    b_ave = [(a + b + c + d + e) * dm / d_m1 for a, b, c, d, e in
-             zip(b_cutoff[0::1], b_cutoff[1::1], b_cutoff[2::1], b_cutoff[3::1], b_cutoff[4::1])]
-    dbi_old = [(a - b) for a, b in zip(b_cutoff[0::1], b_cutoff[1::1])]
-    idx = -1
-    q = np.arange(0, len(b_ave))
-    flag = 0
-    for i in q:
-        idx = idx + 1
-        difference[idx] = abs(b_ave[idx] - b_cutoff[idx])
-        sumup[idx] = b_ave[idx] + b_cutoff[idx]
-        if difference[idx] <= deltab_value[idx] and abs(dbi_old[idx]) <= 0.03:
-            sigmacomp = b_cutoff[idx] / sqrt(ntotmag[idx])
-            avaluecomp = log10(ntotmag[idx]) + b_cutoff[idx] * x[idx]
-            if flag == 0:
-                print('The completeness magnitude is=', x[idx], 'b-value=', b_cutoff[idx], 'error b-value=', sigmacomp,
-                      'a-value=', avaluecomp)
-                x = np.linspace(x[idx], magmax, 1000)
-                plt.semilogy(x, pow(10, avaluecomp - b_cutoff[idx] * x), linestyle='-', label='b-value')
-            flag = 1
-    # compare to normed hist output"
-    plt.semilogy(avm, no_cumulative, '^r')
-    fig21 = plt.gcf()
-    fig21.set_size_inches(6.5, 4.0)
-    cumulativerev = list(reversed(no_cumulative))
-    d2 = list(reversed(np.cumsum(cumulativerev)))
-    plt.semilogy(avm, d2, 'ok', linestyle='--')
-    plt.xlabel('$Magnitude$')
-    plt.ylabel('$Cumulative Number$')
-    
-    return b_cutoff, deltab_value
+    Return Mc standard deviation.
+    """
 
-
-def b_value(magcat, mc):
-
-    bin_m = 0.1
-    magcat_new = ([mgev for mgev in magcat if mgev >= mc])
-    n = len(magcat_new)
-    diffmagcat = np.nansum(magcat_new - np.nanmean(magcat_new)) ** 2
-    b = 1.0 / (log(10) * (np.nanmean(magcat_new) - (mc - bin_m / 2)))
-    deltab = 2.3 * (b ** 2) * sqrt(diffmagcat / (n * (n - 1)))
-    sigma = b / sqrt(n)
-    avalue = log10(n) + b * mc
-    return b, deltab, sigma, avalue, magcat_new
-
-
-def bootstrap_mc(mag_data, alpha):
-    # Estimates Mc uncertainty by bootstrap method
-
-    print("Estimating Mc uncertainty")
+    print("Estimating Mc uncertainty with bootstrap")
+    rng = _force_rng(rng)
     iterations = 50
     mc_bootstrap = []
-    for i in range(iterations):
-        boot = np.random.choice(mag_data, size=len(mag_data), replace=True)
-        boot_mc = lilliefors(boot, alpha)
+    for _ in range(iterations):
+        boot = rng.choice(mag_data, size=len(mag_data), replace=True)
+        boot_mc = lilliefors(boot, alpha, b=b, rng=rng)
         mc_bootstrap.append(boot_mc)
     mc_sigma_bootstrap = np.std(mc_bootstrap)  # mc standard deviation
 
     return mc_sigma_bootstrap
 
 
-def mc_vs_time(magcat, magcat_presequence, mc_ok, st_dev_multiplier, alpha, serial_times, size, step):
-    # Analyses how the magnitude of completeness mc varies with time and identifies
-    # critical regions ("STAI gaps"), where mc >= mc_ok + n * sigma, with n = st_dev_multiplier
-    # mc_ok is the reference value for Mc estimated for the pre-sequence period
+def mc_vs_time(magcat, magcat_presequence, mc_ok, st_dev_multiplier, alpha, serial_times, size, step, b, rng=None):
+    """
+    Estimate Mc through time and identify critical temporal windows ("STAI gaps"). 
+
+    A STAI gap is identified when its Mc is at least ``mc_ok + st_dev_multiplier * sigma_mc``, where
+    ``mc_ok`` is the reference pre-sequence Mc and ``sigma_mc`` is the st dev estimated by bootstrap. 
+    Short isolated intervals are removed.
+    """
 
     register_matplotlib_converters()
 
-    mc_ok_sigma = bootstrap_mc(magcat_presequence, alpha)
-    print("Mc Sigma = ", mc_ok_sigma)
+    rng = _force_rng(rng)
+    mc_ok_sigma = bootstrap_mc(magcat_presequence, alpha, b=b, rng=rng)
+    print(f"Mc standard deviation: {mc_ok_sigma}")
     upper_lim = mc_ok + st_dev_multiplier * mc_ok_sigma
 
-    i = np.arange(0, len(magcat) - size, step)  # starting indexes of the windows
+    # Moving window to estimate Mc vs time
+    # Mc is estimated every "step" events, at t_window (the end time of the moving window)
+    print("Estimating Mc through time in the STAI-filtered catalog")
 
-    # Moving window approach to estimate Mc vs time
-    # Mc is estimated every "step" ( = 250 by default) events, at t_window (the end time of the moving window)
-    print("----- Estimating Mc vs Time in the subcatalog -----")
+    window_starts = np.arange(0, len(magcat) - size + 1, step)
+    
     mc_time = []
     t_window = []  # time of the moving window (represented by the time of the last event within each window)
-    for j in i:
+    for j in window_starts:
         window = magcat[j: j + size]
-        mc_new = lilliefors(window, alpha)
+        mc_new = lilliefors(window, alpha, b=b, rng=rng)
         mc_time.append(mc_new)
-        t_window.append(serial_times[j + size])
+        t_window.append(serial_times[j + size -1])
 
     # Find the temporal bounds of the STAI gaps (where Mc >= mc_ok + n * sigma)
     tmp_hole_lower_lim = []
@@ -527,7 +469,7 @@ def mc_vs_time(magcat, magcat_presequence, mc_ok, st_dev_multiplier, alpha, seri
             if mc_time[i] >= upper_lim and mc_time[i + 1] < upper_lim:
                 tmp_hole_upper_lim.append(t_window[i])
 
-    # Exclude too small gaps, which could simply arise from statistical fluctuations  of the magnitude of completeness
+    # Exclude too small gaps, which could simply arise from Mc statistical fluctuations 
     hole_lower_lim , hole_upper_lim = [], []
     for j in range(len(tmp_hole_lower_lim)):
         index = [idx for idx, val in enumerate(serial_times) if
@@ -536,13 +478,14 @@ def mc_vs_time(magcat, magcat_presequence, mc_ok, st_dev_multiplier, alpha, seri
             hole_lower_lim.append(tmp_hole_lower_lim[j])
             hole_upper_lim.append(tmp_hole_upper_lim[j])
 
-    print('Found:', len(hole_lower_lim), 'STAI gaps')
+    print(f"STAI gaps found: {len(hole_lower_lim)}")
     if len(hole_lower_lim) == 0:
-        print("No STAI gaps found! Consider the following options:\n"
+        raise NoSTAIGapsFound(
+            "No STAI gaps found. Consider the following options:\n"
             "1. Decrease the fault_length_multiplier\n"
             "2. Decrease the st_dev_multiplier\n"
-            "3. Check if the reference Mc is too high: either decrease the duration of the seismically quiescent period or set mc manually in the input file")
-        sys.exit()
+            "3. Check if the reference Mc is too high: either decrease the duration of the seismically quiescent period or set Mc manually in the input file"
+        )
 
     # Extract mc and relative times within each STAI gap
     mc_times_hole, mc_hole = [], []
@@ -561,17 +504,18 @@ def mc_vs_time(magcat, magcat_presequence, mc_ok, st_dev_multiplier, alpha, seri
     mc_time_plot = [mc_time[i] for i in idx_t_window_plot]
 
     fig, ax = plt.subplots(figsize=(10, 6))
-    ticks = equally_spaced_ticks(dates1)
+    ticks = _equally_spaced_ticks(dates1)
     ax.set_xticks(ticks)
-    ax.xaxis.set_major_formatter(dynamic_date_formatter(dates1))
+    ax.xaxis.set_major_formatter(_dynamic_date_formatter(dates1))
     ax.plot(datenums1, mc_time_plot, label='Mc(t)', ls='-')
     ax.fill_between(datenums1, upper_lim, mc_time_plot,
                     where=upper_lim <= mc_time_plot, color='C1', alpha=0.7,
-                    label=f"$M_c \geq M^*_c$ + {st_dev_multiplier} $\sigma$")
+                    label=rf"$M_c \geq M^*_c$ + {st_dev_multiplier} $\sigma$")
     ax.set_xlabel("Time", labelpad=10, fontsize=14) 
     ax.set_ylabel("Mc", labelpad=10, fontsize=14)  
     ax.legend(loc='upper right')
     plt.savefig('fig/Mc_Time.pdf', format='pdf')
+    plt.close()
     
     return hole_lower_lim, hole_upper_lim, mc_times_hole, mc_hole
 
@@ -583,18 +527,17 @@ def map_plot(catalog, lon1, lat1, lon2, lat2):
 
     m = Basemap(projection='merc', resolution='i', llcrnrlon=llcrnrlon, llcrnrlat=llcrnrlat,
                 urcrnrlon=urcrnrlon, urcrnrlat=urcrnrlat)
-
     try:
         m.drawcoastlines(linewidth=0.5)
-    except:
+    except Exception:
         pass
     m.drawcountries()
     m.drawmapboundary()
 
     lon_range = urcrnrlon - llcrnrlon
     lat_range = urcrnrlat - llcrnrlat
-    lat_interval = round(0.2 * lat_range, 2)
-    lon_interval = round(0.2 * lon_range, 2)
+    lat_interval = max(round(0.2 * lat_range, 2), 0.01)
+    lon_interval = max(round(0.2 * lon_range, 2), 0.01)
   
     parallels = np.arange(-90, 90, lat_interval)
     meridians = np.arange(-180, 180, lon_interval)
@@ -605,12 +548,23 @@ def map_plot(catalog, lon1, lat1, lon2, lat2):
     x2, y2 = m(lon2, lat2)
     plt.plot(x1, y1, 'o', color='0.3', alpha=.7, markersize=5, markeredgecolor='w')
     plt.plot(x2, y2, 'o', color='steelblue', alpha=.7, markersize=5, markeredgecolor='w')
-
+    plt.savefig('fig/Spatial_map.pdf', format='pdf')
+    plt.close()
 
     return m
 
 def spatial_smoothing(catalog, xmin, xmax, ymin, ymax, Sigma, sbin):
-    # Smooth seismicity with Gaussian kernel
+    """
+    Convert observed epicenters into grid cell sampling probabilities.
+
+    Each event contributes an isotropic Gaussian kernel with bandwidth ``Sigma`` (km). 
+    The normalized grid rates are later used to sample locations of the reconstructed events.
+    """
+
+    if not np.isfinite(Sigma) or Sigma <= 0:
+        raise ValueError("Sigma must be positive and finite for spatial smoothing.")
+    if not np.isfinite(sbin) or sbin <= 0:
+        raise ValueError("sbin must be positive and finite for spatial smoothing.")
 
     pi = np.pi
     sbinx = sbin
@@ -628,11 +582,17 @@ def spatial_smoothing(catalog, xmin, xmax, ymin, ymax, Sigma, sbin):
         A = (np.sin(Smooth[:, 1] * pi / 180) * np.sin(float(catalog[i, 1]) * pi / 180) + np.cos(
             Smooth[:, 1] * pi / 180) * np.cos(float(catalog[i, 1]) * pi / 180) * np.cos(
             ((float(catalog[i, 0])) - Smooth[:, 0]) * pi / 180))
+        A = np.clip(A, -1.0, 1.0)
         R = np.arccos(A) * 6371
         W = (1 / (2 * pi * pow(Sigma, 2))) * (np.exp((-pow(R, 2)) / (2 * pow(Sigma, 2))))
         Smooth[:, 3] = Smooth[:, 3] + W
 
     TotalRate = sum(Smooth[:, 3])
+    if not np.isfinite(TotalRate) or TotalRate <= 0:
+        raise ValueError(
+            "Spatial smoothing produced a zero or non-finite total rate. "
+            "Check Sigma, sbin, and the filtered catalog spatial extent."
+        )
     Smooth[:, 4] = Smooth[:, 3] / TotalRate
 
     lon_cell_grid = Smooth[:, 0]
@@ -642,7 +602,7 @@ def spatial_smoothing(catalog, xmin, xmax, ymin, ymax, Sigma, sbin):
     return lon_cell_grid, lan_cell_grid, smoothed_rate
 
 
-def trainv(lat1, long1, distx, disty):
+def _trainv(lat1, long1, distx, disty):
 
     r0 = 6367.
     alfa = 57.29578
@@ -656,27 +616,37 @@ def trainv(lat1, long1, distx, disty):
 
 
 def magnitude_distribution(magcat):
+    """
+    Return bin and cumulative counts.
+    """
+        
+    magcat = np.asarray(magcat, dtype=float)
+    if magcat.size == 0:
+        raise ValueError("Cannot calculate a magnitude distribution from an empty catalog")
 
-    min_m = min(magcat)
-    max_m = max(magcat)
-    bin_m = 0.1
+    # Map every magnitude to an integer index on the 0.1 grid
+    mag_bins = np.rint(magcat / MAG_BIN).astype(int)
 
-    bin_edges = np.arange(min_m, max_m + bin_m, bin_m)
-    bin_counts = np.zeros(len(bin_edges), dtype=int)
-    for mag in magcat:
-        bin = int(round(mag / bin_m - min_m*10))
-        bin_counts[bin] += 1
+    min_bin = mag_bins.min()
+    max_bin = mag_bins.max()
+    all_bins = np.arange(min_bin, max_bin + 1)
 
-    idx_zeros = np.where(bin_counts == 0)[0]
-    bin_counts = np.delete(bin_counts, idx_zeros)
-    bin_edges = np.delete(bin_edges, idx_zeros)
+    # Count how many events fall in each integer magnitude index
+    # (subtracting min_bin shifts the first magnitude index to zero, as required by np.bincount)
+    bin_counts = np.bincount(mag_bins - min_bin, minlength=len(all_bins))
 
-    log_bin_counts = [math.log10(i) for i in bin_counts]  # non-cumulative counts
+    nonzero = bin_counts > 0
+    bin_counts = bin_counts[nonzero]
+    # Convert the integer magnitude indices back to magnitude values
+    magnitudes = all_bins[nonzero] * MAG_BIN
 
+    log_bin_counts = np.log10(bin_counts)
+
+    # For each magnitude level M, calculate the number of events with magnitude greater than or equal to M
     cum_counts = np.cumsum(bin_counts[::-1])[::-1]
-    log_cum_counts = [math.log10(i) for i in cum_counts]  # cumulative counts
+    log_cum_counts = np.log10(cum_counts)
 
-    return bin_edges, log_bin_counts, log_cum_counts
+    return magnitudes, log_bin_counts, log_cum_counts
 
 
 # Define possible hypo depth prob distributions
@@ -696,8 +666,41 @@ def fit_bimodal(x, mu1, sigma1, A1, mu2, sigma2, A2):
 def fit_distribution(distribution_function, x, y, p0):
     params, _ = curve_fit(distribution_function, x, y, p0=p0)
     return params
+
+def validate_depth_fit_density(y_fit, depth_distribution):
+    """ 
+    Validate the fitted hypocentral depth density before random sampling. 
+
+    The fitted density is later normalized and used as the probability distribution for sampling reconstructed hypocentral depths. 
+    """
+
+    y_fit = np.asarray(y_fit, dtype=float)
+    if y_fit.size == 0:
+        raise ValueError(f"{depth_distribution} depth fit produced an empty density vector.")
+    if not np.all(np.isfinite(y_fit)):
+        raise ValueError(f"{depth_distribution} depth fit produced non-finite density values.")
+    if np.any(y_fit < 0):
+        raise ValueError(f"{depth_distribution} depth fit produced negative density values.")
+    if np.sum(y_fit) <= 0:
+        raise ValueError(f"{depth_distribution} depth fit produced a zero total density.")
+    return y_fit
+
+
+def depth_fit_evaluation_grid(x_edges, depth_distribution):
+    """
+    Return x values where the fitted depth distribution is evaluated.
+
+    For beta fits, avoid exact 0 and 1 because valid beta shapes can have
+    infinite density at the endpoints.
+    """
+
+    if depth_distribution == "beta":
+        return np.linspace(x_edges[1], x_edges[-2], 500)
+    return np.linspace(x_edges.min(), x_edges.max(), 500)
+
     
 def select_distribution(user_input):
+    print("Fitting hypocentral depth distribution")
     if user_input == 'bimodal':
         print("Parameters to fit: 'mu1', 'sigma1', 'A1', 'mu2', 'sigma2', 'A2'")
         return fit_bimodal
@@ -716,141 +719,209 @@ def select_distribution(user_input):
 
 def ghost_element(catalog, t_start, mc_user, b_user, size, step, st_dev_multiplier,
                   alpha, serial_times, Sigma, sbin, fault_length_multiplier,
-                  depth_distribution, p0):
-    # Simulates magnitude, time, lat, lon and depth of ghost events
+                  depth_distribution, p0, rng=None):
+    """
+    Detect STAI gaps and simulate missing events in the space-time-magnitude domain.
 
-    magcat = catalog[:, MagnColumn]
+    Steps:
+    - catalog spatial filtering to the STAI region
+    - reference and time-dependent Mc estimation
+    - Gutenberg-Richter count and magnitude reconstruction
+    - stochastic sampling of times, epicenters, and hypocentral depths
+    """
+
+    rng = _force_rng(rng)
+
     filtered_catalog, mask, magcat_presequence = filter_catalog(catalog, t_start, serial_times, fault_length_multiplier)
 
-    # Save meaningful filtered dataset to file 
-    write_filterd_catalog(filtered_catalog)
+    if len(magcat_presequence) < MIN_EVENTS:
+        raise ValueError(
+            f"The filtered pre-sequence catalog contains fewer than {MIN_EVENTS} events, which is the min number of events required for the Lilliefors test"
+        )
 
-    if str(mc_user) == 'None':
-        ref_mc = lilliefors(magcat_presequence, alpha)
+    # Save filtered dataset to file 
+    write_filtered_catalog(filtered_catalog)
+
+    # If the user has not provided a b-value, use the standard default b = 1.0
+    if b_user is None:
+        b = 1.0
+        print("b-value: using default b = 1.0")
     else:
-        ref_mc = mc_user
-    print("Reference Mc  = ", ref_mc)  
-    if str(b_user) == 'None':  
-        b, _, _, _, _ = b_value(catalog[:, MagnColumn], ref_mc)
+        b = float(b_user)
+        print(f"b-value: user-defined b = {b}")
+
+    # If the user has not provided a reference Mc, estimate it from the pre-sequence magnitudes
+    if mc_user is None:
+        ref_mc = lilliefors(magcat_presequence, alpha, b=b, rng=rng)
+        print(f"Reference Mc: estimated Mc = {ref_mc}")
     else:
-        b = b_user
-    print("b-value = ", b)
+        ref_mc = float(mc_user)
+        print(f"Reference Mc: user-defined Mc = {ref_mc}")
+        validate_magnitude_value(ref_mc, "User-defined reference Mc")
 
     magcat_filtered = filtered_catalog[:, MagnColumn]
     serial_times_filtered = np.array(serial_times)[mask]
 
-    bin_m = 0.1
-
     # "hole" --> STAI gap
     hole_lower_lim, hole_upper_lim, mc_times_hole, mc_hole = mc_vs_time(magcat_filtered, magcat_presequence, ref_mc,
-                                                                        st_dev_multiplier, alpha, serial_times_filtered, size, step)
+                                                                        st_dev_multiplier, alpha, serial_times_filtered, size, step, b=b, rng=rng)
+
     
-    # Fit hypo depth distribution
-    z_data = filtered_catalog[:, DepthColumn]
-    bins = np.linspace(min(z_data), max(z_data), 101) 
-    if depth_distribution == 'bimodal':
-        y, x = np.histogram(z_data, bins=bins)
+    # ----- Fit hypo depth distribution -----
+
+    z_data = np.asarray(filtered_catalog[:, DepthColumn], dtype=float)
+
+    if depth_distribution == "beta":
+        # Beta distribution is defined on [0, 1]: normalize observed depths before fitting
+        beta_depth_min = np.min(z_data)
+        beta_depth_max = np.max(z_data)
+        beta_depth_range = beta_depth_max - beta_depth_min
+        if beta_depth_range <= 0:
+            raise ValueError("Beta fitting requires hypocentral depths with a non-zero range.")
+        z_fit_data = (z_data - beta_depth_min) / beta_depth_range
     else:
-        y, x = np.histogram(z_data, density=1., bins=bins)
-    x = (x[1:]+x[:-1])/2 # bin centers
+        z_fit_data = z_data
+
+    bins = np.linspace(np.min(z_fit_data), np.max(z_fit_data), 101)
+
+    if depth_distribution == "bimodal":
+        y, x_edges = np.histogram(z_fit_data, bins=bins)
+    else:
+        y, x_edges = np.histogram(z_fit_data, bins=bins, density=True)
+
+    # Histogram bin centers used for fitting
+    x = (x_edges[1:] + x_edges[:-1]) / 2
 
     distribution_function = select_distribution(depth_distribution)
     params = fit_distribution(distribution_function, x, y, p0=p0)
-    print('Fitted parameters = ', params)
-    y, x, _ = plt.hist(z_data, bins)
-    x_fit = np.linspace(x.min(), x.max(), 500)
-    y_fit = distribution_function(x_fit, *params)
+    print(f"Fitted depth-distribution parameters: {params}")
 
-    print("----- Starting catalog filling -----")
+    # Evaluate the fitted distribution over the same domain used for fitting
+    x_fit = depth_fit_evaluation_grid(x_edges, depth_distribution)
+    y_fit = validate_depth_fit_density(distribution_function(x_fit, *params), depth_distribution)
+
+    print("Reconstructing missing events")
+
+    # Convert the reference completeness magnitude to integer grid index on the 0.1 grid to avoid floating point truncation errors
+    ref_mc_bin = int(np.rint(ref_mc / MAG_BIN)) 
+
+    # Map every event magnitude to integer index on the 0.1 grid to avoid floating point truncation errors
+    # Examples:
+    # 1.0 -> 10
+    # 1.1 -> 11
+    # 1.4 -> 14
+    mag_bins = np.rint(np.asarray(magcat_filtered, dtype=float) / MAG_BIN).astype(int)
+    
     m_ghost, t_ghost, n_ghost_hole = [], [], []
     for i in range(len(hole_lower_lim)):  # iterate over all the STAI gaps
+
+        # Number of ghost events estimated for the first (which is likely too short) step.
+        # This value is temporarily stored and will later be merged with the second step.
+        first_step_ghosts = 0
 
         n_ghost_step_list = []
         for j in range(len(mc_hole[i])):  # iterate over all the steps in the STAI gap
 
             mc_step = mc_hole[i][j]  # Mc value for a given step
 
+            # index = event indices belonging to the current temporal step
             if j == 0:
-
-                index = [idx for idx, val in enumerate(serial_times) if hole_lower_lim[i] < val <= mc_times_hole[i][j]]
-
+                index = [idx for idx, val in enumerate(serial_times_filtered) if hole_lower_lim[i] < val <= mc_times_hole[i][j]]
             else:
+                index = [idx for idx, val in enumerate(serial_times_filtered) if mc_times_hole[i][j - 1] < val <= mc_times_hole[i][j]]
 
-                index = [idx for idx, val in enumerate(serial_times) if
-                         mc_times_hole[i][j - 1] < val <= mc_times_hole[i][j]]
+            # ---- Calculate the total number of bins in the step ----
 
-            nbin = int(mc_step * 10 - ref_mc * 10)  # total number of bins in the step
+            # Convert the mc for the current step to integer index on the 0.1 grid to avoid floating point truncation errors
+            mc_step_bin = int(np.rint(mc_step / MAG_BIN)) 
+            # Calculate how many 0.1 magnitude bins fall between ref_mc and mc_step
+            # nbin = mc_step_bin - ref_mc_bin 
 
-            # Compare expected and observed number of events for each bin in the step
-            count = 0
-            m2 = mc_step  # current upper bound of magnitude bin
-            m1 = float(decimal.Decimal(mc_step) - decimal.Decimal(bin_m))  # current lower bound of magnitude bin
+            index_array = np.asarray(index, dtype=int)
 
-            # Expected number of magnitudes m >= mc_step (since magnitudes in the step are complete for m >= mc_step,
-            # the EXPECTED number of magnitudes with m >= mc_step equals the OBSERVED number of magnitudes with m >= mc_step)
-            n_m2 = len([magcat[i] for i in index if magcat[i] >= m2])
+            # Observed number of events complete above the current step Mc
+            n_m2 = np.count_nonzero(mag_bins[index_array] >= mc_step_bin)
 
-            n_ghost_bin_list = []
-            while count < nbin:  # iterate over all the bins in the step
+            if mc_step_bin <= ref_mc_bin:
+                n_ghost_step = 0
+            else:
+                n_ghost_bin_list = []
+                # Process all discrete magnitude levels below mc_step down to ref_mc
+                # Example:
+                # mc_step_bin = 15 and ref_mc_bin = 10
+                # current_bin takes the values:
+                # 14, 13, 12, 11, 10
+                for current_bin in range(mc_step_bin - 1, ref_mc_bin - 1, -1):  # iterate over all the bins in the step
 
-                # Expected number of magnitude m >= m1
-                n_m1 = int(n_m2 * 10 ** (b * bin_m))
-                # Expected number of magnitudes in the bin (i.e. with m == m1)
-                n_exp_bin = n_m1 - n_m2
+                    # Expected cumulative number at the next lower threshold
+                    n_m1 = int(n_m2 * 10 ** (b * MAG_BIN))
+                    # Expected number in the current magnitude bin 
+                    n_exp_bin = n_m1 - n_m2
 
-                # Observed number of magnitudes in the bin (i.e. with m == m1)
-                n_obs_bin = len([magcat[i] for i in index if magcat[i] == m1])
+                    # Observed number in the current magnitude bin 
+                    n_obs_bin = np.count_nonzero(mag_bins[index_array] == current_bin)
 
-                # Estimate the number of ghost magnitudes in the bin
-                n_ghost_bin = n_exp_bin - n_obs_bin
+                    # Estimated missing events in the current magnitude bin
+                    n_ghost_bin = n_exp_bin - n_obs_bin
 
-                if n_ghost_bin <= 0:  # due to the inherent variability, bins can have more magnitude values than those expected!
-                    # Update variables
-                    m2 = m1
-                    m1 = float(decimal.Decimal(m2) - decimal.Decimal(bin_m))
+                    if n_ghost_bin > 0:
+                        ghost_magnitude = round(current_bin * MAG_BIN, 1)
+                        m_ghost.extend([ghost_magnitude] * n_ghost_bin)
+                        n_ghost_bin_list.append(n_ghost_bin)
+
+                    # The predicted cumulative count at the lower threshold becomes the upper threshold count for the next iteration
                     n_m2 = n_m1
-                    count += 1
-                    continue
 
-                else:
-                    # List of missing magnitudes
-                    m_ghost_bin = [m1] * n_ghost_bin
-
-                    # Update variables
-                    m2 = m1
-                    m1 = float(decimal.Decimal(m2) - decimal.Decimal(bin_m))
-                    n_m2 = n_m1
-                    count += 1
-
-                    m_ghost.extend(m_ghost_bin)  # append all magnitudes to one list
-                    n_ghost_bin_list.append(n_ghost_bin)  # from bin to step scale
-
-            n_ghost_step = sum(n_ghost_bin_list)  # number of ghost events in the current step
+                n_ghost_step = sum(n_ghost_bin_list)  # number of ghost events in the current step
 
             # Times random sampling
-            for _ in range(n_ghost_step):
 
-                u = np.random.random()
+            # Special case: the STAI gap consists of a single Mc step
+            # --> sample all ghost events occurrence time uniformly over the whole gap
+            if len(mc_hole[i]) == 1:
+                n_to_sample = n_ghost_step
+                lower_time = hole_lower_lim[i]
+                upper_time = mc_times_hole[i][0]
 
-                # times are sampled from an uniform distribution whose support are the limits of the interval
-                if j == 1:
-                    random_t = hole_lower_lim[i] + u * (mc_times_hole[i][1] - hole_lower_lim[i])
-                    # Add the events occurred after the large event to the first interval, i.e.
-                    # the events occurred in the range [hole_lower_lim[i], mc_times_hole[i][0]]
-                    # to those occurred in the first interval ( [mc_times_hole[i][0], mc_times_hole[i][1]] )
-                else:
-                    random_t = mc_times_hole[i][j - 1] + u * (mc_times_hole[i][j] - mc_times_hole[i][j - 1])
-                    # Eqs occurred in the range [mc_times_hole[i][j-1], mc_times_hole[i][j]]
+            # The first step immediately after the mainshock may contain very few observed events
+            # --> store its ghost event count and merge it with the second step 
+            elif j == 0:
+                first_step_ghosts = n_ghost_step
+                n_ghost_step_list.append(n_ghost_step)
+                continue
 
-                t_ghost.append(random_t)  # append all occurrence times to one list
+            # Merge first and second steps (covering [hole_lower_lim, mc_times_hole[i][1]])
+            elif j == 1:
+                n_to_sample = first_step_ghosts + n_ghost_step
+                lower_time = hole_lower_lim[i]
+                upper_time = mc_times_hole[i][1]
 
-            n_ghost_step_list.append(n_ghost_step)  # from step to STAI gap scale
-        print('Filled', i + 1, 'over a total of', len(hole_lower_lim), 'STAI gaps with', sum(n_ghost_step_list),
-                      'events')
+            # Case for all subsequent steps
+            else:
+                n_to_sample = n_ghost_step
+                lower_time = mc_times_hole[i][j - 1]
+                upper_time = mc_times_hole[i][j]
+
+            # Occurrence times are sampled from a uniform distribution whose support are the limits of the step
+            for _ in range(n_to_sample):
+                u = rng.random()
+                random_t = lower_time + u * (upper_time - lower_time)
+                t_ghost.append(random_t)
+
+            # Store the number of ghost events estimated for the current step
+            # (the first step was already stored before the 'continue')
+            n_ghost_step_list.append(n_ghost_step)
+
+        print(
+            f"STAI gap {i + 1}/{len(hole_lower_lim)}: "
+            f"reconstructed {sum(n_ghost_step_list)} events"
+        )
 
         n_ghost_hole.append(sum(n_ghost_step_list))  # append the number of ghost events in the current STAI gap
 
-    # Simulate lat, lon and depth of ghost events
+    # ---------------------    
+    # ---- LON and LAT ----
+    # --------------------- 
         
     xmin, ymin = min(filtered_catalog[:, LonColumn]), min(filtered_catalog[:, LatColumn])
     xmax, ymax = max(filtered_catalog[:, LonColumn]), max(filtered_catalog[:, LatColumn])
@@ -863,79 +934,78 @@ def ghost_element(catalog, t_start, mc_user, b_user, size, step, st_dev_multipli
         subcatalog = filtered_catalog[index]
         lon_cell_grid, lat_cell_grid, smoothed_rate = spatial_smoothing(subcatalog, xmin, xmax, ymin, ymax, Sigma, sbin)
 
-        # index = [idx for idx, val in enumerate(serial_times) if hole_lower_lim[i] <= val <= hole_upper_lim[i]]
-        # subcatalog_tmp = catalog[index]
-        # mag_big_shock = max(subcatalog_tmp[:, MagnColumn])
-        # lat_big_shock = subcatalog_tmp[(subcatalog_tmp[:, MagnColumn] == mag_big_shock), LatColumn][0]
-        # lon_big_shock = subcatalog_tmp[(subcatalog_tmp[:, MagnColumn] == mag_big_shock), LonColumn][0]
-
-        # moment_big_shock = 10 ** (3 / 2 * (mag_big_shock + 10.7)) * 10 ** (-7)
-        # l_big_shock = 10 ** (-5.20 + 0.35 * math.log10(moment_big_shock))  # rupture length (from Mai and Beroza (2000))
-
-        # ymax, xmax = trainv(lat_big_shock, lon_big_shock, l_big_shock, l_big_shock)
-        # ymin, xmin = trainv(lat_big_shock, lon_big_shock, -l_big_shock, -l_big_shock)
-
-        # subcatalog = subcatalog_tmp[
-        #              (subcatalog_tmp[:, LatColumn] >= ymin) & (subcatalog_tmp[:, LatColumn] <= ymax) &
-        #              (subcatalog_tmp[:, LonColumn] >= xmin) & (subcatalog_tmp[:, LonColumn] <= xmax), :]
-
-        # lon_cell_grid, lat_cell_grid, smoothed_rate = spatial_smoothing(subcatalog, xmin, xmax, ymin, ymax, Sigma, sbin)
-
         # Simulate lat and lon of ghost eqs
-        idx = np.argsort(smoothed_rate)
-        cumulative_sum = np.cumsum(smoothed_rate[idx])
+        probabilities = np.asarray(smoothed_rate, dtype=float)
+        if not np.all(np.isfinite(probabilities)) or probabilities.sum() <= 0:
+            raise ValueError(
+                "Spatial sampling probabilities are zero or non-finite."
+            )
+        probabilities = probabilities / probabilities.sum()
 
         # Number of eqs to simulate
         n_to_sample = n_ghost_hole[i]
 
-        # Depth
-        samples = np.random.choice(x_fit, size=n_to_sample, p=y_fit / np.sum(y_fit))
-        z_ghost.extend([round(value, 1) for value in samples])
+        selected_cells = rng.choice(len(probabilities), size=n_to_sample, p=probabilities)
+        for selected_cell in selected_cells:
+            # Sample uniformly within the selected spatial grid cell
+            rand_lon = (lon_cell_grid[selected_cell] + rng.random() * sbin)
+            rand_lat = (lat_cell_grid[selected_cell] + rng.random() * sbin)
 
-        # Generate n=n_to_sample random numbers btw 0 and 1
-        u = np.random.random(n_to_sample)
-
-        for j in range(len(u)):
-            if u[j] < cumulative_sum[0]:
-                rand_lon = lon_cell_grid[idx[0]] - np.random.random() * sbin
-                rand_lat = lat_cell_grid[idx[0]] - np.random.random() * sbin
-            else:
-                for k in range(1, len(smoothed_rate)):
-                    if (cumulative_sum[k - 1] <= u[j]) and (u[j] < cumulative_sum[k]):
-                        rand_lon = lon_cell_grid[idx[k - 1]] + np.random.random() * sbin
-                        rand_lat = lat_cell_grid[idx[k - 1]] + np.random.random() * sbin
             lon_ghost_hole.append(round(rand_lon, 4))
             lat_ghost_hole.append(round(rand_lat, 4))
 
         lon_ghost.extend(lon_ghost_hole)
         lat_ghost.extend(lat_ghost_hole)
 
+        # ---------------   
+        # ---- DEPTH ----
+        # ---------------
+
+        samples = rng.choice(x_fit, size=n_to_sample, p=y_fit / np.sum(y_fit))
+        if depth_distribution == "beta":
+            # Convert beta samples from [0, 1] back to km
+            samples = beta_depth_min + samples * beta_depth_range
+
+        z_ghost.extend([round(value, 1) for value in samples])
+        
+    # For the beta plot, convert the fitted x-axis and density back to km
+    if depth_distribution == "beta":
+        x_fit_plot = (beta_depth_min + x_fit * beta_depth_range)
+        y_fit_plot = y_fit / beta_depth_range
+    else:
+        x_fit_plot = x_fit
+        y_fit_plot = y_fit
+        
     # Plot hypo depth distribution
+
+    # For beta, convert bins back to km for plotting
+    if depth_distribution == "beta":
+        bins_plot = beta_depth_min + bins * beta_depth_range
+    else:
+        bins_plot = bins
 
     data_min = np.min(z_ghost)
     data_max = np.max(z_ghost)
+    # Zoom around the reconstructed hypocentral depth range
     margin = (data_max - data_min) * 0.95  
     depth_min, depth_max = data_min - margin, data_max + margin
-    
+
     fig, ax = plt.subplots(figsize=(8, 6))
     if depth_distribution == 'bimodal':
-        ax.hist(z_data, bins=bins, alpha=0.3, color='0.3', label='Hypo depths (filtered) original')
-        ax.plot(x_fit, y_fit, color='red', label=f"Fitted distribution: {depth_distribution}")
-        ax.hist(z_ghost, bins=bins, color='steelblue', label='Hypo depths replenished')
+        ax.hist(z_data, bins=bins_plot, alpha=0.3, color='0.3', label='Hypo depths (filtered) original')
+        ax.plot(x_fit_plot, y_fit_plot, color='red', label=f"Fitted distribution: {depth_distribution}")
+        ax.hist(z_ghost, bins=bins_plot, color='steelblue', label='Hypo depths replenished')
     else:
-        ax.hist(z_data, bins=bins, density=True, alpha=0.3, color='0.3', label='Hypo depths (filtered) original')
-        ax.plot(x_fit, y_fit, color='red', label=f"Fitted distribution: {depth_distribution}")
-        ax.hist(z_ghost, bins=bins, density=True, color='steelblue', label='Hypo depths replenished')
+        ax.hist(z_data, bins=bins_plot, density=True, alpha=0.3, color='0.3', label='Hypo depths (filtered) original')
+        ax.plot(x_fit_plot, y_fit_plot, color='red', label=f"Fitted distribution: {depth_distribution}")
+        ax.hist(z_ghost, bins=bins_plot, density=True, color='steelblue', label='Hypo depths replenished')
     ax.set_xlim(depth_min, depth_max)
     ax.set_xlabel('Hypocenter Depth [km]', labelpad=10, fontsize=14)
     ax.legend()
     plt.savefig('fig/Hypo_Depth_Distribution.pdf', format='pdf')
+    plt.close()
     
     ####    
-
-    # idx_magcatok = [idx for idx, val in enumerate(magcat) if val >= ref_mc]
-    # magcat_ok = [magcat[i] for i in idx_magcatok]
-    # serial_times_ok = [serial_times[i] for i in idx_magcatok]
 
     # plots
     # Plot original (m >= Mc) + simulated eqs for the meaningful region only 
@@ -970,6 +1040,7 @@ def ghost_element(catalog, t_start, mc_user, b_user, size, step, st_dev_multipli
     ax[1].legend(loc='upper left')
     plt.subplots_adjust(hspace=0.5)
     plt.savefig('fig/Magnitude_Time.pdf', format='pdf')
+    plt.close()
 
     # Magnitude-Time plots
 
@@ -986,6 +1057,7 @@ def ghost_element(catalog, t_start, mc_user, b_user, size, step, st_dev_multipli
     ax.set_title('Original (filtered) catalog')
     plt.plot(x1, magcat_compl_filtered, 'o', markersize=3, markerfacecolor='0.3', markeredgecolor='None')
     plt.savefig('fig/Magnitude_SeqNumbers_Original.pdf', format='pdf')
+    plt.close()
     
 
     fig, ax = plt.subplots()
@@ -994,6 +1066,7 @@ def ghost_element(catalog, t_start, mc_user, b_user, size, step, st_dev_multipli
     ax.set_title('Replenished (filtered) catalog')
     plt.plot(x2, sorted_new_mag, 'o', markersize=3, markerfacecolor='0.3', markeredgecolor='None')
     plt.savefig('fig/Magnitude_SeqNumbers_Replenished.pdf', format='pdf')
+    plt.close()
     
     # Map
     # Plot original (m >= Mc) + simulated eqs
@@ -1003,25 +1076,52 @@ def ghost_element(catalog, t_start, mc_user, b_user, size, step, st_dev_multipli
     lat_compl = [lat[i] for i in idx_magcatok_filtered]
     lon_compl = [lon[i] for i in idx_magcatok_filtered]
 
-    fig, ax = plt.subplots()
-    m = map_plot(filtered_catalog, lon_compl, lat_compl, lon_ghost, lat_ghost)
-    plt.savefig('fig/Spatial_map.pdf', format='pdf')
+    map_plot(filtered_catalog, lon_compl, lat_compl, lon_ghost, lat_ghost)
     
-    return ref_mc, b, m_ghost, t_ghost, lon_ghost, lat_ghost, z_ghost
+    stai_durations_days = [
+        float(upper - lower)
+        for lower, upper in zip(hole_lower_lim, hole_upper_lim)
+    ]
+    run_summary = {
+        "reference_mc": float(ref_mc),
+        "b_value": float(b),
+        "b_value_source": "default" if b_user is None else "user",
+        "n_stai_gaps": len(hole_lower_lim),
+        "stai_durations_days": stai_durations_days,
+        "total_stai_duration_days": float(np.sum(stai_durations_days)),
+        "n_events_reconstructed": len(m_ghost),
+    }
+
+    return ref_mc, m_ghost, t_ghost, lon_ghost, lat_ghost, z_ghost, run_summary
 
 
 def replenished_catalog(catalog, t_start, mc_user, b_user, size, step, st_dev_multiplier,
                         alpha, serial_times, Sigma, sbin, fault_length_multiplier,
-                        depth_distribution, p0):
-    # Returns the replenished catalog (original + ghost events)
+                        depth_distribution, p0, rng=None):
+    """
+    Create and write one replenished catalog realization.
+    
+    Original events below the reference Mc are excluded; reconstructed events
+    are merged with the remaining original events, sorted by occurrence time,
+    and marked with ``flag=1``. Original events have ``flag=0``.
+    """
+
+    rng = _force_rng(rng)
+
+    if size < MIN_EVENTS:
+        raise ValueError(
+            f"The moving-window size must be at least min_events = {MIN_EVENTS}")
+
+    # Validate magnitude binning (must be 0.1)
+    validate_magnitude_bins(catalog)
 
     path = "fig"
     if not os.path.exists(path):
         os.mkdir(path)
 
-    ref_mc, b, m_ghost, t_ghost, lon_ghost, lat_ghost, z_ghost = ghost_element(catalog, t_start, mc_user, b_user,
+    ref_mc, m_ghost, t_ghost, lon_ghost, lat_ghost, z_ghost, run_summary = ghost_element(catalog, t_start, mc_user, b_user,
                                                            size, step, st_dev_multiplier, alpha, serial_times, Sigma, sbin, fault_length_multiplier,
-                                                           depth_distribution, p0)
+                                                           depth_distribution, p0, rng=rng)
 
     magcat = catalog[:, MagnColumn]
     magcat_compl_idx = [idx for idx, val in enumerate(magcat) if val >= ref_mc]
@@ -1061,8 +1161,6 @@ def replenished_catalog(catalog, t_start, mc_user, b_user, size, step, st_dev_mu
 
     sorted_flag = flag[np.argsort(new_times)]
 
-    depth = np.zeros(len(new_times))
-
     sorted_new_year, sorted_new_month, sorted_new_day, sorted_new_hour, sorted_new_min, sorted_new_sec = \
         [], [], [], [], [], []
 
@@ -1083,9 +1181,9 @@ def replenished_catalog(catalog, t_start, mc_user, b_user, size, step, st_dev_mu
     replenished_catalog[:, LatColumn] = sorted_new_lat[:]
     replenished_catalog[:, YearColumn] = sorted_new_year[:]
     replenished_catalog[:, MonthColumn] = sorted_new_month[:]
-    replenished_catalog[:, DayColumn] = sorted_new_month[:]
+    replenished_catalog[:, DayColumn] = sorted_new_day[:]
     replenished_catalog[:, MagnColumn] = sorted_new_mag[:]
-    replenished_catalog[:, DepthColumn] = np.zeros(len(new_times))
+    replenished_catalog[:, DepthColumn] = sorted_new_depth[:]
     replenished_catalog[:, HourColumn] = sorted_new_hour[:]
     replenished_catalog[:, MinuteColumn] = sorted_new_min[:]
     replenished_catalog[:, SecondColumn] = sorted_new_sec[:]
@@ -1098,19 +1196,22 @@ def replenished_catalog(catalog, t_start, mc_user, b_user, size, step, st_dev_mu
         for x in rows:
             writer.writerow(x)
 
-    bin_edges_original, log_bin_counts_original, log_cum_counts_original = \
+    magnitudes_original, log_bin_counts_original, log_cum_counts_original = \
         magnitude_distribution(catalog[:, MagnColumn])
-    bin_edges_replenished, log_bin_counts_replenished, log_cum_counts_replenished = \
+    magnitudes_replenished, log_bin_counts_replenished, log_cum_counts_replenished = \
         magnitude_distribution(replenished_catalog[:, MagnColumn])
 
     fig, ax = plt.subplots(figsize=(8, 10))
-    ax.plot(bin_edges_original, log_bin_counts_original, 'o', color='0.5', markersize=3, label='Non-cumulative counts (Original)', alpha=0.7)
-    ax.plot(bin_edges_original, log_cum_counts_original, '-', color='0.5', label='Cumulative counts (Original)', alpha=0.7)
-    ax.plot(bin_edges_replenished, log_bin_counts_replenished, 'o', color='black', markersize=3, label='Non-cumulative counts (Replenished)', alpha=0.7)
-    ax.plot(bin_edges_replenished, log_cum_counts_replenished, '-', color='black', label='Cumulative counts (Replenished)', alpha=0.7)
+    ax.plot(magnitudes_original, log_bin_counts_original, 'o', color='0.5', markersize=3, label='Non-cumulative counts (Original)', alpha=0.7)
+    ax.plot(magnitudes_original, log_cum_counts_original, '-', color='0.5', label='Cumulative counts (Original)', alpha=0.7)
+    ax.plot(magnitudes_replenished, log_bin_counts_replenished, 'o', color='black', markersize=3, label='Non-cumulative counts (Replenished)', alpha=0.7)
+    ax.plot(magnitudes_replenished, log_cum_counts_replenished, '-', color='black', label='Cumulative counts (Replenished)', alpha=0.7)
     ax.set_xlabel("Magnitude", labelpad=10, fontsize=14)
     ax.set_ylabel("Frequency", labelpad=10, fontsize=14)
     ax.legend(loc='upper right')
     plt.savefig('fig/Magnitude_Frequency_Distribution.pdf', format='pdf')
+    plt.close()
+
+    _write_run_summary(run_summary)
     
     return replenished_catalog
